@@ -1,4 +1,4 @@
-This is the README file for Class::Generate, version 1.04.
+This is the README file for Class::Generate, version 1.05.
 
 Class::Generate is a Perl5 module to simplify creating class
 hierarchies.  It offers typed or untyped scalar, array, and hash
@@ -147,3 +147,14 @@ Enhancements:
 	in the package implementing the class.  This improves handling of
 	classes saved to files.  It simplifies the code for all classes to
 	boot!
+
+CHANGES IN VERSION 1.05
+
+Enhancements:
+
+  --	The class() function now accepts the -parent flag.  Classes can be
+	specified in a style closer to C++, should you prefer.
+
+  --	_cginfo (see version 1.04) now holds much more information than just a
+	 class' base type.  Classes saved to files are almost completely
+	identical to classes generated dynamically.

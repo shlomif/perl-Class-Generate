@@ -373,19 +373,21 @@ that evaluates to an array reference:
 	lucky_numbers => { type => '@', default => '[42, 17]' }
     };
     class Silly => {
-	 UIDs => {		# Default value is all UIDs
-	     type => '@',	# currently in /etc/passwd.
-	     default => 'do { local $/ = undef;
-			      open PASSWD, "/etc/passwd";
-			      [ map {(split(/:/))[2]} split /\n/, <PASSWD> ] }'
+	UIDs => {		# Default value is all UIDs
+	    type => '@',	# currently in /etc/passwd.
+	    default => 'do {
+		local $/ = undef;
+		open PASSWD, "/etc/passwd";
+		[ map {(split(/:/))[2]} split /\n/, <PASSWD> ]
+	    }'
 	}
     };
 
 Specify hash members analogously.
 
-Because the value is evaluated each time the constructor is invoked,
-it may change between invocations.
-If the value is a reference rather than a string,
+The value is evaluated each time the constructor is invoked.
+In C<Silly>, the default value for C<UIDs> can change between invocations.
+If the default value is a reference rather than a string,
 it is not re-evaluated.
 In the following, default values for C<e1> and C<e2>
 are based on the members of C<@default_value>
@@ -404,11 +406,18 @@ to define C<Example>:
     @default_value = (10, 20, 30);
     Example->new;	# Now only e3 is (1, 2, 3).
 
-If the default value is a string,
-the C<class> function evaluates it to ensure that it
+There are two more things to know about default values that are strings.
+First, if a member is typed,
+the C<class> function evaluates its (string-based)
+default value to ensure that it
 is of the correct type for the member.
 Be aware of this if your default value has side effects
 (and see L<Checking Default Value Types>).
+
+Second, the context of the default value is the C<new()> method
+of the package generated to implement your class.
+That's why C<e1> in C<Example>, above,
+needs the name of the current package in its default value.
 
 =item post=>code
 
@@ -536,7 +545,8 @@ Its attributes are:
 
 =item required=>list of constraints
 
-This is another (and more general) way to require that parameters be passed to the constructor.
+This is another (and more general) way to require that
+parameters be passed to the constructor.
 Its value is a reference to an array of constraints.
 Each constraint is a string that must be an expression
 composed of Perl logical operators and member names.
@@ -594,7 +604,8 @@ the member's methods.
 
 =item style=>style definition
 
-The C<style> attribute controls how parameters are passed to the class' constructor.
+The C<style> attribute controls how parameters
+are passed to the class' constructor.
 See L<PARAMETER PASSING STYLES>.
 
 =back
@@ -602,7 +613,7 @@ See L<PARAMETER PASSING STYLES>.
 =head1 ADDING METHODS
 
 Accessors often do not provide a class with enough functionality.
-They also do not encapsulate algorithms.
+They also do not encapsulate your algorithms.
 For these reasons, the C<class> function lets you add methods.
 Both object methods and class methods are allowed.
 
@@ -619,6 +630,14 @@ For example,
     ];
     $p = Person->new(first_name => 'Barney', last_name => 'Rubble');
     print $p->name;	# Prints "Barney Rubble".
+
+    class Stack => [	# Venerable example.
+	top_e	 => { type => '$', private => 1, default => -1 },
+	elements => { type => '@', private => 1, default => '[]' },
+	'&push' => '$elements[++$top_e] = $_[0];',
+	'&pop'  => '$top_e--;',
+	'&top'  => 'return $elements[$top_e];'
+    ];
 
 A method has the following attributes which,
 like members, are specified as a hash reference:
@@ -665,6 +684,11 @@ You can, however, use accessors, as usual:
     ];
     $f = Foo->new(m1 => 1, m2 => [2, 3]);
     print Foo->to_string($f);	# Prints "1[2,3]"
+
+You can also call class methods from within instance and class methods.
+Use the C<Class-E<gt>method> syntax.
+
+Currently, a class method may be public or private, but not protected.
 
 =item objects=>list of object instance expressions
 
@@ -737,9 +761,18 @@ of a subclass.
 (Prior to version 1.02 you specified the parent using C<parent=E<gt>P>,
 but this is deprecated in favor of C<-parent=E<gt>P>.)
 
-Class C<p> need not have been defined
+As of version 1.05, the C<class> function also accepts C<-parent>.
+In other words,
+
+    class S => [ specification ], -parent => P
+    subclass S => [ specification ], -parent => P
+
+are equivalent.
+
+Class C<P> need not have been defined
 using the C<class> or C<subclass> function.
-It must have a constructor named C<new>, however.
+It must have a constructor named C<new>, however,
+or at least be an ancestor of a class that does.
 
 A subclass may be either an array or hash reference.
 Its parent must be the same type of reference.
@@ -779,7 +812,7 @@ user-defined code in the same way you access members or methods of the class:
 	'&report' => q{return "$name is $age years old, is a $job_title, " .
 			      "and manages " . (&workers_size + 1) . " people";}
     ], -parent => 'Employee';
-   
+
 If a class has multiple parents,
 and these parents have members whose names conflict,
 the name used is determined by a depth-first search of the parents.
@@ -871,7 +904,7 @@ For example, suppose you want the average age of all Persons:
 	age  => { type => '$', required => 1, readonly => 1 },
 	new  => { post => $compute_average_age }
     ],
-        '-class_vars' => '$n $total $average';
+        -class_vars => '$n $total $average';
     $p = Person->new(age => 24);		# Average age is now 24.
     $q = Person->new(age => 30);		# Average age is now 27.
 
@@ -885,16 +918,18 @@ For example:
 		      age => { type => '$', required => 1, readonly => 1 },
 		      new => { post => $compute_average_age }
     ],
-	  '-class_vars' => [ { '$n' => 0 },
-			     { '$total' => 0 },
-			     '$average' ];
+	  -class_vars => [ { '$n' => 0 },
+			   { '$total' => 0 },
+			   '$average' ];
 
 =item -virtual=>boolean
 
-Virtual classes are a useful modeling aid and debugging tool.
+A virtual class is a class that cannot be instantiated,
+although its descendents can.
+Virtual classes are useful as modeling aids and debugging tools.
 Specify them using the C<-virtual> flag:
 
-    class Parent => [ e => '$' ], '-virtual' => 1;
+    class Parent =>   [ e => '$' ], -virtual => 1;
     subclass Child => [ d => '$' ], -parent => 'Parent';
     Child->new;		# This is okay.
     Parent->new;	# This croaks.
@@ -1488,9 +1523,9 @@ member is not a recognized attribute.
 and C<private> attributes.
 The more general attribute, C<protected>, will be used.
 
-=item %s: Method "%s": A class method cannot be protected or private
+=item %s: Method "%s": A class method cannot be protected
 
-(F) In the current implementation, a class method must be public.
+(F) In the current implementation, a class method must be public or private.
 
 =item %s: Method "%s": Unknown attribute "%s"
 
@@ -1507,12 +1542,16 @@ but not all non-private members (or too many members) were listed.
 (F) The set of member and method names cannot contain duplicates.
 Member and method names share the same namespace.
 
-=item %s: Parent class "%s" was not defined using class() or subclass()
+=item %s: Parent class "%s" was not defined using class() or subclass(); %s reference assumed
 
 (W) The C<subclass> function permits parents to be any package,
 not just those defined using C<class> and C<subclass>.
 However, because certain capabilities are lost (e.g., base type checking),
 it emits warnings when it detects such subclasses.
+Also, the C<subclass> function assumes that invoking C<parent-E<gt>new> returns
+a blessed reference to whatever the child expects.
+If it's wrong, you'll get a run-time error when your program invokes one of
+the parent's or child's accessors.
 
 =item %s: Parent package "%s" does not exist
 

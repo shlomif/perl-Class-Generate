@@ -47,3 +47,10 @@ Revision history for Perl extension Class::Generate.
 
 	The MIX parameter passing style wasn't implementing the checks for
 	extraneous parameters correctly.
+
+1.05	The class function can now be used to declare subclasses, just like
+	C++.
+
+	The mechanism for recording class declarations has been improved. It's
+	been modularized, with functions that make classes saved to files
+	understood when they're read back in.
