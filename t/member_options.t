@@ -1,6 +1,6 @@
 #! /usr/local/bin/perl -w
 
-use lib qw(./t);
+use lib qw(./t ../..);
 use strict;
 use Test_Framework;
 
@@ -64,5 +64,24 @@ Test {
 
 Test_Failure { new Private_Mem ( mem => 1 ) };
 Test_Failure { Private_Mem->new()->mem };
+
+Test {
+    class Private_Mem_Accessors => {
+	smem => { type => "\$", private => 1 },
+	amem => { type => "@", private => 1 },
+	hmem => { type => "%", private => 1 },
+	'&method' => q{
+	    $smem = 1; &undef_smem;
+	    @amem = (1, 2, 3); &add_amem(&amem_size, &last_amem); &undef_amem;
+	    %hmem = ( v => 1 ); @amem = &hmem_keys; @amem = &hmem_values;
+	    &delete_hmem('v'); &undef_hmem;},
+	'&get_values' => q{ return ((defined $smem ? $smem : 0),
+				    (&amem_size >= 0 ? @amem : ()),
+				    (&hmem_keys ? %hmem : ())); }
+    };
+    $o = new Private_Mem_Accessors;
+    $o->method;
+    Arrays_Equal([$o->get_values], [0, 1])
+};
 
 Report_Results;

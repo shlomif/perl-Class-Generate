@@ -5,7 +5,7 @@ use Exporter;
 use vars qw(@ISA @EXPORT);
 
 @ISA = qw(Exporter);
-@EXPORT = qw(&Test &Test_Failure &Report_Results);
+@EXPORT = qw(&Test &Test_Failure &Report_Results &Arrays_Equal);
 my $test_no = 1;
 my @results;
 
@@ -34,6 +34,15 @@ sub test_succeeds {
     my $result;
     eval { $result = &$code };
     return $result && ! $@;
+}
+
+sub Arrays_Equal($$) {
+    my ($a1, $a2) = @_;
+    return 0 if $#$a1 != $#$a2;
+    for ( my $i = 0; $i <= $#$a1; $i++ ) {
+	return 0 if $$a1[$i] ne $$a2[$i];
+    }
+    return 1;
 }
 
 1;

@@ -4,7 +4,7 @@ Class::Generate - Generate Perl class hierarchies
 
 =head1 SYNOPSIS
 
- use Class::Generate qw(&class &subclass);
+ use Class::Generate qw(class subclass);
 
  # Declare class Class_Name, with the following types of members:
  class
@@ -123,7 +123,7 @@ Invoking the constructor creates an instance of the class.
 You may provide C<new> with parameters to set the values of members:
 
     class Person => [ name => '$', age => '$' ];
-    $p = Person->new;			# Neither name and age are defined.
+    $p = Person->new;			# Neither name nor age is defined.
     $q = Person->new( name => 'Jim' );	# Only name is defined.
     $r = Person->new( age => 32 );	# Only age is defined.
 
@@ -249,6 +249,11 @@ The C<name_keys> method returns all keys associated with the member.
 
 The C<name_values> method returns all values associated with the member.
 
+=item C<delete_name>
+
+The C<delete_name> method takes one or more arguments.
+It deletes from C<name>'s hash all elements matching the arguments.
+
 =back
 
 For example:
@@ -363,15 +368,18 @@ when the constructor is invoked.
 For array members, use a string that looks like a Perl expression
 that evaluates to an array reference:
 
-    class Person => { name => '$',
-		      lucky_numbers => { type => '@',
-					 default => '[42, 17]' } };
+    class Person => {
+	name => '$',
+	lucky_numbers => { type => '@', default => '[42, 17]' }
+    };
     class Silly => {
-	 UIDs => {
-	     type => '@',
+	 UIDs => {		# Default value is all UIDs
+	     type => '@',	# currently in /etc/passwd.
 	     default => 'do { local $/ = undef;
 			      open PASSWD, "/etc/passwd";
-			      [ map $$_[2], split /\n/, <PASSWD> ] }' } };
+			      [ map {(split(/:/))[2]} split /\n/, <PASSWD> ] }'
+	}
+    };
 
 Specify hash members analogously.
 
@@ -400,7 +408,7 @@ If the default value is a string,
 the C<class> function evaluates it to ensure that it
 is of the correct type for the member.
 Be aware of this if your default value has side effects
-(and see L</Checking Default Value Types>).
+(and see L<Checking Default Value Types>).
 
 =item post=>code
 
@@ -417,7 +425,7 @@ For instance:
     print $p->age;	# Prints 30 again.
 
 You reference array and hash members as usual
-(except for testing for definition; see L</"BUGS">).
+(except for testing for definition; see L<"BUGS">).
 You can reference individual elements, or the whole list:
 
     class Foo => [
@@ -453,7 +461,7 @@ For instance:
     $q = $o->mem(2);	# Sets $q to 1.
 
 is a way to return the previous value of C<mem> any time it's modified
-(but see L<NOTES>).
+(but see L<"NOTES">).
 
 =item assert=>expression
 
@@ -481,7 +489,14 @@ the member cannot be accessed outside the class;
 that is, it has no accessor functions that can be called
 outside the scope of the package defined by C<class>.
 A private member can, however, be accessed in C<post>, C<pre>, and C<assert>
-code of other members of the class, just as if it were a non-private member.
+code of other members of the class.
+
+=item protected=>boolean
+
+If the C<protected> attribute is true,
+the member cannot be accessed outside the class or any of its subclasses.
+A protected member can, however, be accessed in C<post>, C<pre>, and C<assert>
+code of other members of the class or its subclasses.
 
 =item readonly=>boolean
 
@@ -496,7 +511,18 @@ nor are other accessors that might modify the member.
 =item key=>boolean
 
 If this attribute is true, then the member participates in equality tests.
-See L</Equals>.
+See L<"Equals">.
+
+=item nocopy=>value
+
+The C<nocopy> attribute gives you some per-member control
+over how the C<copy> method.
+If C<nocopy> is false (the default),
+the original's value is copied as described in L<"Copy">.
+If C<nocopy> is true,
+the original's value is assigned rather than copied;
+in other words, the copy and the original will have the same value
+if the original's value is a reference.
 
 =back
 
@@ -562,7 +588,7 @@ Assertions for members are inserted after the constructor's assertion.
 
 This attribute's value can be any string.
 If you save the class to a file
-(see L</Saving the Classes>),
+(see L<Saving the Classes>),
 the string is included as a comment just before
 the member's methods.
 
@@ -589,7 +615,7 @@ For example,
 
     class Person => [ first_name => '$',
 		      last_name  => '$',
-		      '&name'    => 'return "$first_name $last_name";'
+		      '&name'    => q{return "$first_name $last_name";}
     ];
     $p = Person->new(first_name => 'Barney', last_name => 'Rubble');
     print $p->name;	# Prints "Barney Rubble".
@@ -611,13 +637,17 @@ The method cannot be accessed outside the class.
     class Example => [
 	m1 => '$',
 	m2 => '$',
-	'&public_interface' => 'return &internal_algorithm;',
+	'&public_interface' => q{return &internal_algorithm;},
 	'&internal_algorithm' => { private => 1,
-				   body => 'return $m1 + 4*$m2;' }
+				   body => q{return $m1 + 4*$m2;} }
     ];
     $e = Example->new(m1 => 2, m2 => 4);
     print $e->public_interface;		# Prints 18.
     print $e->internal_algorithm;	# Run-time error.
+
+=item protected=>boolean
+
+If true, the method cannot be accessed outside the class or any of its subclasses.
 
 =item class_method=>boolean
 
@@ -639,7 +669,7 @@ You can, however, use accessors, as usual:
 =item objects=>list of object instance expressions
 
 This attribute is only used for class methods.
-It is needed when the method refers to a private member or method.
+It is needed when the method refers to a private or protected member or method.
 Its argument is a list,
 each element of which is a Perl expression that occurs in the body
 of the class method.
@@ -732,14 +762,65 @@ that aren't members of the subclass.
 Subclass members with the same name as that of their parent
 override their parent methods.
 
-You can access a member of a parent within C<pre>, C<post>,
-or C<assertion> code by naming it,
-just as if it was a member of the class.
-(You cannot access methods this way.)
-You cannot access private members of a parent class from a subclass.
+You can access a (non-private) member or method of a parent within
+user-defined code in the same way you access members or methods of the class:
+
+    class Person => [
+	name => '$',
+	age => '$',
+	'&report' => q{return "$name is $age years old"}
+    ];
+    subclass Employee => [
+	job_title => '$',
+	'&report' => q{return "$name is $age years old and is a $job_title";}
+    ], -parent => 'Person';
+    subclass Manager => [
+	workers => '@Employee',
+	'&report' => q{return "$name is $age years old, is a $job_title, " .
+			      "and manages " . (&workers_size + 1) . " people";}
+    ], -parent => 'Employee';
+   
 If a class has multiple parents,
 and these parents have members whose names conflict,
 the name used is determined by a depth-first search of the parents.
+
+The previous example shows that a subclass may declare a member or method
+whose name is already declared in one of its ancestors.
+The subclass declaration overrides any ancestor declarations:
+the C<report> method behaves differently depending on the class of the
+instance that invokes it.
+
+Sometimes you override an ancestor's method to add some extra functionality.
+In that situation,
+you want the overriding method to invoke the ancestor's method.
+All user-defined code in C<Class::Generate> has access to a variable C<$self>,
+which is a blessed reference.
+You therefore can use Perl's C<SUPER::> construct to get at ancestor methods:
+
+    class Person => [
+	name => '$',
+	age => '$',
+	'&report' => q{return &name . ": $age years old"}
+    ];
+    subclass Employee => [
+	job_title => '$',
+	'&report' => q{return $self->SUPER::report . "; job: $job_title";}
+    ], -parent => 'Person';
+    subclass Manager => [
+	workers => '@Employee',
+	'&report' => q{return $self->SUPER::report . "; manages: " .
+			      (&workers_size + 1) . " people";}
+    ], -parent => 'Employee';
+
+Currently, you cannot access a protected method of an ancestor this way.
+The following code will generate a run-time error:
+
+    class Foo => [
+	'&method' => { protected => 1, body => '...' },
+    ];
+    subclass Bar => [
+	'&method' => { protected => 1, body => '$self->SUPER::method;' }
+    ];
 
 =head1 FLAGS
 
@@ -752,8 +833,8 @@ The following is a list of recognized flags:
 
 =item -use=>list
 
-Your C<pre> or C<post> code may want to use functions
-declared in other packages.
+Your C<pre> or C<post> code, or your methods,
+may want to use functions declared in other packages.
 List these packages as the value of the C<-use> flag.
 For example, suppose you are creating a class that does date handling,
 and you want to use functions in the C<Time::Local>
@@ -763,7 +844,7 @@ Write the class as follows:
     class Date_User => [ ... ],
 	'-use' => 'Time::Local Time::localtime';
 
-Any C<pre> or C<post> code can now access the
+Any code you add to C<Date_User> can now access the
 time functions declared in these two packages.
 
 To import functions, you need to use the array reference form:
@@ -815,7 +896,7 @@ Specify them using the C<-virtual> flag:
 
     class Parent => [ e => '$' ], '-virtual' => 1;
     subclass Child => [ d => '$' ], -parent => 'Parent';
-    Child->new;		# This is okay
+    Child->new;		# This is okay.
     Parent->new;	# This croaks.
 
 There is no built-in way to specify a virtual method,
@@ -830,7 +911,7 @@ The string serves as a comment for the class.
 =item -options=>{ options }
 
 This flag lets you specify options that alter your class' behavior.
-See L</OPTIONS>.
+See L<"OPTIONS">.
 
 =item -exclude=>string
 
@@ -1270,9 +1351,9 @@ each of which is a package to use.
 Change the member name,
 or change the instance variable name using the C<instance_var> option.
 
-=item %s: "required" attribute ignored for private member "%s"
+=item %s: "required" attribute ignored for private/protected member "%s"
 
-(W) A member cannot be both private and required as a constructor parameter.
+(W) If member is private or protected, it cannot be a constructor parameter.
 
 =item %s: A package of this name already exists
 
@@ -1324,7 +1405,18 @@ Scalars, lists, and other references are not allowed.
 =item %s: Error in new => { style => '... %s' }: %s is not a member
 
 (F) A class' constructor specifies a style that requires listing members,
-and includes a value that is not a member.
+and the list includes a value that is not a member.
+
+=item %s: Error in new => { style => '... %s' }: %s is not a public member
+
+(F) A class' constructor specifies a style that requires listing members,
+and the list includes the name of a private or protected member.
+Only public members can be passed as a constructor parameter.
+
+=item %s: Error in new => { style => '... %s' }: Name "%s" used %d times
+
+(F) A class' constructor specifies a style that requires listing members,
+and the list contains the same member name more than once.
 
 =item %s: Evaluation failed (missing final semicolon in pre/post code?)
 
@@ -1389,6 +1481,16 @@ or an identifier.
 
 (W) One of the attributes given in the hash reference specifying the named
 member is not a recognized attribute.
+
+=item "%s: Member "%s" declared both private and protected (protected assumed)
+
+(W) The member's specification has C<TRUE> values for both the C<protected>
+and C<private> attributes.
+The more general attribute, C<protected>, will be used.
+
+=item %s: Method "%s": A class method cannot be protected or private
+
+(F) In the current implementation, a class method must be public.
 
 =item %s: Method "%s": Unknown attribute "%s"
 
@@ -1592,7 +1694,8 @@ Class::Struct(3)
 
 =head1 COPYRIGHT
 
-Copyright (c) 1999 Steven Wartik. All rights reserved. This program is free
+Copyright (c) 1999, 2000 Steven Wartik.
+All rights reserved. This program is free
 software; you can redistribute it and/or modify it under the same terms as
 Perl itself.
 
@@ -1610,7 +1713,7 @@ However, if the C<pre> code contains the C<E<lt>E<lt>> quotation form,
 Perl will probably complain about a syntax error;
 and if it contains a comment,
 Perl will ignore the first line of the C<post> code.
-Note this only affects code checking,
+Note that this only affects code checking,
 not the package that's generated.
 
 In the current implementation, if member C<m> is an array,
@@ -1643,8 +1746,14 @@ scalar member C<f>, not array variable C<@f>:
 	}
     };
 
-You cannot access a method from a parent class in user-defined code
-except by referring to it via C<$self>.
+If a class declares a protected method C<m>,
+and one of its subclasses also declares C<m>,
+the subclass can't access the parent's version.
+
+A subclass can declare a member C<m> that overrides a parent's
+declaration of C<m>,
+but it can cause some logical inconsistencies and isn't recommended.
+Tne entire model of member overriding may change in some future version.
 
 The C<subclass> function doesn't test for circularity
 in inheritance hierarchies.
@@ -1664,6 +1773,19 @@ or a value if C<$accept_refs> is true.
 The C<UNIVERSAL::isa> function is used to determine if
 something is an array or hash reference.
 This presents possibilities for metaspecification functions.
+
+The name C<_cginfo> is reserved in all packages
+generated by C<Class::Generate>.
+
+Emacs users will quickly discover that the form:
+
+    class Foo => [ member_name => '$' ];
+
+causes subsequent lines to be incorrectly indented.
+The reason is that perl-mode is confused by C<'$'>.
+Use instead:
+
+    class Foo => [ member_name => "\$" ];
 
 This package clearly owes much to C<Class::Struct>.
 I thank its creators for their insights.

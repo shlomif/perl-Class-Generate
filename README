@@ -1,4 +1,4 @@
-This is the README file for Class::Generate, version 1.03.
+This is the README file for Class::Generate, version 1.04.
 
 Class::Generate is a Perl5 module to simplify creating class
 hierarchies.  It offers typed or untyped scalar, array, and hash
@@ -24,9 +24,9 @@ install 2 files:
   --	Generate.pod, which contains the documentation, in POD format.  It is
 	sufficiently large that I decided to place it in a separate file.
 
-Copyright (c) 1999 Steven Wartik. All rights reserved. This program is free
-software; you can redistribute it and/or modify it under the same terms as
-Perl itself.
+Copyright (c) 1999,2000 Steven Wartik. All rights reserved. This program is
+free software; you can redistribute it and/or modify it under the same terms
+as Perl itself.
 
 CHANGES IN VERSION 1.01
 
@@ -117,3 +117,33 @@ Enhancements:
 
   --	The key/value style is a little smarter about catching parameters
 	that aren't members.
+
+CHANGES IN VERSION 1.04
+
+The big change is the addition of protected members and methods to the
+object model.  Other things:
+
+Bug fixes:
+
+  --	The regexps for testing the validity of a member name let some
+	erroneous names slip by.  They have been corrected.
+
+  --	A test for whether a subroutine name is known in a package was
+	incorrectly implemented and sometimes resulted in a warning about an
+	undefined value.  It's been fixed.
+
+  --	The MIX parameter passing style wasn't implementing the checks for
+	extraneous parameters correctly.
+
+Enhancements:
+
+  --	Hash-based members have a new accessor: $o->delete_x(k) deletes
+	key k from hash-based member x of instance o.
+
+  --	Added the nocopy option for members that should be assigned
+	rather than copied during instance copying.
+
+  --	The base type of a class is now saved in a variable _cginfo contained
+	in the package implementing the class.  This improves handling of
+	classes saved to files.  It simplifies the code for all classes to
+	boot!

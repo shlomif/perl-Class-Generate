@@ -24,3 +24,26 @@ Revision history for Perl extension Class::Generate.
 
 	A Subclass may now access its parents' members in user-defined
 	code as identifiers, not through methods.
+
+1.04	Classes may now include protected members and methods, accessible in
+	subclasses but not in the parent.
+
+	Hash-based members have a new accessor: $o->delete_x(k) deletes
+	key k from hash-based member x of instance o.
+
+	The nocopy option for members improves control over the semantics
+	of instance copying.
+
+	A variable _cginfo has been added to each package.  Currently it is
+	a scalar storing the class' base type.  Eventually it will contain
+	information that will improve handling of classes saved to files.
+
+	The regexps for testing the validity of a member name let some
+	erroneous names slip by.  They have been corrected.
+
+	A test for whether a subroutine name is known in a package was
+	incorrectly implemented and sometimes resulted in a warning about an
+	undefined value.  It's been fixed.
+
+	The MIX parameter passing style wasn't implementing the checks for
+	extraneous parameters correctly.

@@ -12,7 +12,7 @@ BEGIN {
     require Exporter;
     @ISA = qw(Exporter);
     @EXPORT_OK = (qw(&class &subclass), qw($save $accept_refs $strict $allow_redefine $class_var $instance_var $check_code $check_default $nfi));
-    $VERSION = '1.03';
+    $VERSION = '1.04';
 
     $accept_refs    = 1;
     $strict	    = 1;
@@ -30,7 +30,6 @@ my ($class_name, $class);
 my ($class_vars, $use_packages, $excluded_methods, $param_style_spec, $default_pss);
 my %class_options;
 my %classes;			# A record of all classes defined.
-my %base;			# The base types of all classes.
 
 my $cm;				# These variables are for error messages.
 my $sa_needed		 = 'must be string or array reference';
@@ -49,12 +48,13 @@ my ($initialize,				# These are all used to
     $class_defined,
     $process_class,
     $store_initial_value_reference,
-    $set_positional_parameters_order,
+    $check_for_invalid_parameter_names,
     $constructor_parameter_passing_style,
     $croak_if_duplicate_names,
+    $base,
     $invalid_spec_message);
 
-my %valid_option  = map((substr($_,1) => 1), grep substr($_,0,1) eq '$', @EXPORT_OK);
+my %valid_option = map(substr($_, 0, 1) eq '$' ? (substr($_,1) => 1) : (), @EXPORT_OK);
 
 sub class(%) {					# One of the two interface
     my %params = @_;				# routines to the package.
@@ -91,8 +91,8 @@ sub subclass(%) {				# One of the two interface
     croak "$cm: A package of this name already exists"		if ! $allow_redefine_for_class && &$class_defined($class_name);
     for my $p ( $parent->values ) {
 	croak qq|$cm: Parent package "$p" does not exist|	if ! &$class_defined($p);
-	croak qq|$cm: Base type does not match that of "$p"|	if exists $classes{$p} &&
-								   ! UNIVERSAL::isa($params{$class_name}, $base{$p});
+	my $b = &$base($p);
+	croak qq|$cm: Base type does not match that of "$p"|	if defined $b && ! UNIVERSAL::isa($params{$class_name}, $b);
     }
     &$set_class_type($params{$class_name}, $parent);
     for my $p ( $parent->values ) {
@@ -100,7 +100,9 @@ sub subclass(%) {				# One of the two interface
 	    $class->add_parents($classes{$p});
 	}
 	else {
-	    carp sprintf("$cm: $parent_class_unknown", $p)	if $WARNING;
+	    if ( ! defined &$base($p) ) {
+		carp sprintf("$cm: $parent_class_unknown", $p)	if $WARNING;
+	    }
 	    $class->add_parents($p);
 	}
     }
@@ -131,9 +133,9 @@ $set_class_type = sub {			# Set $class to the type (array or
     my @params = ($class_name, %class_options);
     if ( UNIVERSAL::isa($class_spec, 'ARRAY') ) {
 	if ( defined $parent ) {
-	    my ($parent_name, @rest) = $parent->values;
+	    my ($parent_name, @other_array_values) = $parent->values;
 	    croak qq|$cm: An array reference based subclass must have exactly one parent|
-		if @rest;
+		if @other_array_values;
 	    croak sprintf("$cm: $parent_class_unknown", $parent_name)
 		if ! exists $classes{$parent_name};
 	    push @params, ( base_index => $classes{$parent_name}->last + 1 );
@@ -206,14 +208,13 @@ $parse_class_specification = sub {	# Parse the class' specification,
 $parse_method_specification = sub {
     my ($member_name, $actual_name, $specs) = @_;
     my (%spec, $method);
-    my $invalid_spec_error = &$invalid_spec_message('method', $actual_name, 'body');
 
-    croak $invalid_spec_error if ! defined $$specs{$member_name};
-    eval { %spec = %{Class::Generate::Hash->new($$specs{$member_name}, 'body')} };
-    croak $invalid_spec_error if $@;
-    $method = Class::Generate::Method->new($actual_name, $spec{body});
+    eval { %spec = %{Class::Generate::Hash->new($$specs{$member_name} || die, 'body')} };
+    croak &$invalid_spec_message('method', $actual_name, 'body') if $@;
+
     if ( $spec{class_method} ) {
-	bless $method, 'Class::Generate::Class_Method';
+	croak qq|$cm: Method "$actual_name": A class method cannot be protected or private| if $spec{private} || $spec{protected};
+	$method = Class::Generate::Class_Method->new($actual_name, $spec{body});
 	if ( $spec{objects} ) {
 	    my $objects;
 	    eval { $objects = Class::Generate::Array->new($spec{objects}) };
@@ -221,6 +222,9 @@ $parse_method_specification = sub {
 	    $method->add_objects($objects->values);
 	}
 	delete $spec{objects} if exists $spec{objects};
+    }
+    else {
+	$method = Class::Generate::Method->new($actual_name, $spec{body});
     }
     delete $spec{class_method} if exists $spec{class_method};
     $class->user_defined_methods($actual_name, $method);
@@ -230,11 +234,9 @@ $parse_method_specification = sub {
 $parse_member_specification = sub {
     my ($member_name, $specs, $required) = @_;
     my (%spec, $member, %member_params);
-    my $invalid_spec_error = &$invalid_spec_message('member', $member_name, 'type');
 
-    croak $invalid_spec_error if ! defined $$specs{$member_name};
-    eval { %spec = %{Class::Generate::Hash->new($$specs{$member_name}, 'type')} };
-    croak $invalid_spec_error if $@;
+    eval { %spec = %{Class::Generate::Hash->new($$specs{$member_name} || die, 'type')} };
+    croak &$invalid_spec_message('member', $member_name, 'type') if $@;
 
     $spec{required} = 1 if $$required{$member_name};
     if ( exists $spec{default} ) {
@@ -246,15 +248,19 @@ $parse_member_specification = sub {
 	$member_params{default} = $spec{default};
     }
     %member_params = map defined $spec{$_} ? ($_ => $spec{$_}) : (), qw(post pre assert);
-    if ( $spec{type} =~ m/[\$@%]?($class_name_regexp)/o ) {
+    if ( $spec{type} =~ m/^[\$@%]?($class_name_regexp)$/o ) {
 	$member_params{base} = $1;
     }
-    elsif ( $spec{type} !~ m/[\$\@\%]/ ) {
+    elsif ( $spec{type} !~ m/^[\$\@\%]$/ ) {
 	croak qq|$cm: Member "$member_name": "$spec{type}" is not a valid type|;
     }
-    if ( $spec{required} && $spec{private} ) {
-	carp qq|$cm: "required" attribute ignored for private member "$member_name"| if $WARNING;
+    if ( $spec{required} && ($spec{private} || $spec{protected}) ) {
+	carp qq|$cm: "required" attribute ignored for private/protected member "$member_name"| if $WARNING;
 	delete $spec{required};
+    }
+    if ( $spec{private} && $spec{protected} ) {
+	carp qq|$cm: Member "$member_name" declared both private and protected (protected assumed)| if $WARNING;
+	delete $spec{private};
     }
     delete @member_params{grep ! defined $member_params{$_}, keys %member_params};
     if ( substr($spec{type}, 0, 1) eq '@' ) {
@@ -273,7 +279,7 @@ $parse_member_specification = sub {
 
 $parse_any_flags = sub {
     my $params = $_[0];
-    my %flags = map(($_, $$params{$_}), grep(substr($_, 0, 1) eq '-', keys %$params));
+    my %flags = map substr($_, 0, 1) eq '-' ? ($_ => $$params{$_}) : (), keys %$params;
     return if ! %flags;
   flag:
     while ( my ($flag, $value) = each %flags ) {
@@ -285,12 +291,11 @@ $parse_any_flags = sub {
 	$flag eq '-class_vars' and do {
 	    eval { $class_vars = Class::Generate::Array->new($value) };
 	    croak qq|"-class_vars" flag $sa_needed| if $@;
-	    for my $var_spec ( $class_vars->values ) {
-		next if ! ref $var_spec;
-		croak qq|Each class variable must be scalar or hash reference|
+	    for my $var_spec ( grep ref($_), $class_vars->values ) {
+		croak 'Each class variable must be scalar or hash reference'
 		    unless UNIVERSAL::isa($var_spec, 'HASH');
-		for my $var ( keys %$var_spec ) {
-		    &$store_initial_value_reference(\$$var_spec{$var}, $var) if ref $$var_spec{$var};
+		for my $var ( grep ref($$var_spec{$_}), keys %$var_spec ) {
+		    &$store_initial_value_reference(\$$var_spec{$var}, $var);
 		}
 	    }
 	    next flag;
@@ -410,7 +415,6 @@ $process_class = sub {			# Parse its specification, generate a
 	}
     }
     $classes{$class_name} = $class;
-    $base{$class_name} = (UNIVERSAL::isa($class_spec, 'ARRAY') ? 'ARRAY' : 'HASH');
 };
 
 $constructor_parameter_passing_style = sub {	# Establish the parameter-passing style
@@ -430,21 +434,22 @@ $constructor_parameter_passing_style = sub {	# Establish the parameter-passing s
 		carp $cm, ': Probable mismatch calling constructor in superclass "', $parent_constructor_package_name, '"' if $WARNING;
 	    }
 	}
-	return Class::Generate::Key_Value->new('params');
+	return Class::Generate::Key_Value->new('params', $class->public_member_names);
     };
     $style eq 'positional' and do {
-	my $s = Class::Generate::Positional->new;
-	my @member_names = $class->nonprivate_member_names;
+	&$check_for_invalid_parameter_names(@values);
+	my @member_names = $class->public_member_names;
 	croak "$cm: Missing/extra members in style" unless $#values == $#member_names;
-	&$set_positional_parameters_order($s, @values);
-	return $s;
+	    
+	return Class::Generate::Positional->new(@values);
     };
     $style eq 'mix' and do {
-	my $s = Class::Generate::Mix->new('params');
-	my @member_names = $class->members_keys;
+	&$check_for_invalid_parameter_names(@values);
+	my @member_names = $class->public_member_names;
 	croak "$cm: Extra parameters in style specifier" unless $#values <= $#member_names;
-	&$set_positional_parameters_order($s, @values);
-	return $s;
+	my %kv_members = map(($_ => 1), @member_names);
+	delete @kv_members{@values};
+	return Class::Generate::Mix->new('params', [@values], keys %kv_members);
     };
     $style eq 'own' and do {
 	for ( my $i = 0; $i <= $#values; $i++ ) {
@@ -455,13 +460,22 @@ $constructor_parameter_passing_style = sub {	# Establish the parameter-passing s
     croak qq|$cm: Invalid parameter passing style "$style"|;
 };
 
-$set_positional_parameters_order = sub {	# For parameter-passing styles with
-    my ($style, @param_names) = @_;		# positional orderings, set the order
-    my $i = 0;					# in which the parameters are passed.
+$check_for_invalid_parameter_names = sub {
+    my @param_names = @_;
+    my $i = 0;
     for my $param ( @param_names ) {
 	croak qq|$cm: Error in new => { style => '... $param' }: $param is not a member|
-	    unless defined $class->members($param);
-	$style->order($param, $i++);
+	    if ! defined $class->members($param);
+	croak qq|$cm: Error in new => { style => '... $param' }: $param is not a public member|
+	    if $class->private($param) || $class->protected($param);
+    }
+    my %uses;
+    for my $param ( @param_names ) {
+	$uses{$param}++;
+    }
+    %uses = map(($uses{$_} > 1 ? ($_ => $uses{$_}) : ()), keys %uses);
+    if ( %uses ) {
+	croak "$cm: Error in new => { style => '...' }: ", join('; ', map qq|Name "$_" used $uses{$_} times|, keys %uses);
     }
 };
 
@@ -485,6 +499,11 @@ $croak_if_duplicate_names = sub {
     }
 };
 
+$base = sub {
+    my $class_name = $_[0];
+    return eval '$' . $class_name . '::_cginfo';
+};
+
 $invalid_spec_message = sub {
     return sprintf qq|$cm: Invalid specification of %s "%s" ($sh_needed with "%s" key)|, @_;
 };
@@ -493,10 +512,11 @@ package Class::Generate::Member_Names;	# This package encapsulates functions
 use strict;				# to handle name substitution in
 					# user-defined code.
 
-my ($method_regexp,		# Regexp of member methods.
-    $accessor_regexp,		# Regexp of member and other accessors.
-    $private_member_regexp);	# (For class methods) Regexp of accessors
-				# for private members.
+my ($member_regexp,		  # Regexp of accessible members.
+    $accessor_regexp,		  # Regexp of accessible member accessors (x_size, etc.).
+    $user_defined_methods_regexp, # Regexp of accessible user-defined instance methods.
+    $nonpublic_member_regexp);	  # (For class methods) Regexp of accessors
+				  # for protected and private members.
 
 sub set_element_regexps() {		# Establish the regexps for
     my @names;				# name substitution.
@@ -504,82 +524,99 @@ sub set_element_regexps() {		# Establish the regexps for
 	# First for members...
     @names = accessible_member_regexps($class);
     if ( ! @names ) {
-	undef $method_regexp;
+	undef $member_regexp;
     }
     else {
-	$method_regexp = '(' . join('|', sort { length $b <=> length $a } @names) . ')\b';
+	$member_regexp = '(?:\b(?:my|local)\b[^=;()]+)?(' . join('|', sort { length $b <=> length $a } @names) . ')\b';
     }
 
-	# Next for accessors (e.g., x_size) and instance methods...
-    @names = (map($_->accessor_names($class), $class->members_values),
-	      grep $class->include_method($_), map($_->name, $class->instance_methods));
+	# Next for accessors (e.g., x_size)...
+    @names = accessible_accessor_regexps($class);
     if ( ! @names ) {
 	undef $accessor_regexp;
     }
     else {
-	$accessor_regexp = '&(' . join('|', sort { length $b <=> length $a } @names) . ')\b';
+	$accessor_regexp = '&(' . join('|', sort { length $b <=> length $a } @names) . ')\b(?:\s*\()?';
     }
 
-	# Finally for private members and instance methods in class methods.
+	# Next for user-defined instance methods...
+    @names = accessible_user_defined_method_regexps($class);
+    if ( ! @names ) {
+	undef $user_defined_methods_regexp;
+    }
+    else {
+	$user_defined_methods_regexp = '&(' . join('|', sort { length $b <=> length $a } @names) . ')\b(?:\s*\()?';
+    }
+
+	# Finally for protected and private members, and instance methods in class methods.
     if ( $class->class_methods ) {
-	@names = (map($_->accessor_names($class), grep $class->private($_->name), $class->members_values),
-		  grep($class->private($_), map($_->name, $class->instance_methods)));
+	@names = (map($_->accessor_names($class, $_->name), grep $class->protected($_->name) || $class->private($_->name), $class->members_values),
+		  grep($class->private($_) || $class->protected($_), map($_->name, $class->instance_methods)));
 	if ( ! @names ) {
-	    undef $private_member_regexp;
+	    undef $nonpublic_member_regexp;
 	}
 	else {
-	    $private_member_regexp = join('|', sort { length $b <=> length $a } @names);
+	    $nonpublic_member_regexp = join('|', sort { length $b <=> length $a } @names);
 	}
     }
     else {
-	undef $private_member_regexp;
+	undef $nonpublic_member_regexp;
     }
 }
 
 sub substituted($) {			# Within a code fragment, replace
     my $code = $_[0];			# member names and accessors with the
 					# appropriate forms.
-    $code =~ s/$method_regexp/method_invocation($1)/eg     if defined $method_regexp;
-    $code =~ s/$accessor_regexp/accessor_invocation($1)/eg if defined $accessor_regexp;
+    $code =~ s/$member_regexp/member_invocation($1, $&)/eg		       if defined $member_regexp;
+    $code =~ s/$accessor_regexp/accessor_invocation($1, $+, $&)/eg	       if defined $accessor_regexp;
+    $code =~ s/$user_defined_methods_regexp/accessor_invocation($1, $1, $&)/eg if defined $user_defined_methods_regexp;
     return $code;
 }
-
-sub method_invocation($) {		# Perform the actual substitution
-    my $member_reference = $_[0];	# for element references.
+				# Perform the actual substitution
+sub member_invocation($$) {	# for member references.
+    my ($member_reference, $match) = @_;
     my ($name, $type, $form, $index);
+    return $member_reference if $match =~ /\A(?:my|local)\b[^=;()]+$member_reference$/s;
     $member_reference =~ /^(\W+)(\w+)$/;
     $name = $2;
     return $member_reference if ! defined ($index = member_index($class, $name));
     $type = $1;
     $form = $class->instance_var . '->' . $index;
-    return $form if $type eq '$';
-    return $type . '{' . $form . '}';
+    return $type eq '$' ? $form : $type . '{' . $form . '}';
 }
-
-sub accessor_invocation($) {		# Perform the actual substitution
-    my $name = $_[0];			# for accessor references.
+					# Perform the actual substitution for
+sub accessor_invocation($$$) {		# accessor and user-defined method references.
+    my ($accessor_name, $element_name, $match) = @_;
     my $prefix = $class->instance_var . '->';
-    return $prefix . $name		if ! $class->private($name);
-    return $prefix . '$' . $name	if $' =~ /\A\s*\(/;
-    return $prefix . '$' . $name . '()';
+    my $c = class_of($element_name, $class);
+    if ( ! ($c->protected($element_name) || $c->private($element_name)) ) {
+	return $prefix . $accessor_name	. (substr($match, -1) eq '(' ? '(' : '');
+    }
+    if ( $c->private($element_name) || $c->name eq $class->name ) {
+	return "$prefix\$$accessor_name(" if substr($match, -1) eq '(';
+	return "$prefix\$$accessor_name()";
+    }
+    my $form = "&{$prefix" . $class->protected_members_info_index . qq|->{'$accessor_name'}}(|;
+    $form .= $class->instance_var . ',';
+    return substr($match, -1) eq '(' ? $form : $form . ')';
 }
 
 sub substituted_in_class_method {
     my $method = $_[0];
-    my (@objs, $code, $private_member_invocation_regexp);
+    my (@objs, $code, $nonpublic_member_invocation_regexp);
     $code = $method->body;
-    return $code if ! (defined $private_member_regexp && (@objs = $method->objects));
-    $private_member_invocation_regexp = '(' . join('|', map(quotemeta($_), @objs)) . ')' .
-					'\s*->\s*(' . $private_member_regexp . ')' .
-					'(\s*\((?:\s*\))?)?';
-    $code =~ s/$private_member_invocation_regexp/private_method_invocation($1, $2, $3)/ge;
+    return $code if ! (defined $nonpublic_member_regexp && (@objs = $method->objects));
+    $nonpublic_member_invocation_regexp = '(' . join('|', map(quotemeta($_), @objs)) . ')' .
+					  '\s*->\s*(' . $nonpublic_member_regexp . ')' .
+					  '(\s*\((?:\s*\))?)?';
+    $code =~ s/$nonpublic_member_invocation_regexp/nonpublic_method_invocation($1, $2, $3)/ge;
     return $code;
 }
 
-sub private_method_invocation {				# Perform the actual
-    my ($object, $private_member, $paren_matter) = @_;	# substitution for
-    my $form = '&$' . $private_member . '(' . $object;	# private method and
-    if ( defined $paren_matter ) {			# member references.
+sub nonpublic_method_invocation {			 # Perform the actual
+    my ($object, $nonpublic_member, $paren_matter) = @_; # substitution for
+    my $form = '&$' . $nonpublic_member . '(' . $object; # nonpublic method and
+    if ( defined $paren_matter ) {			 # member references.
 	if ( index($paren_matter, ')') != -1 ) {
 	    $form .= ')';
 	}
@@ -626,6 +663,35 @@ sub accessible_members($;$) {
 	@members = $class->members_values;
     }
     return (@members, map(accessible_members($_, 1), grep(ref $_, $class->parents)));
+}
+
+sub accessible_accessor_regexps($;$) {
+    my ($class, $disallow_private_members) = @_;
+    my ($member_name, @accessor_names);
+    for my $member ( $class->members_values ) {
+	next if $class->private($member_name = $member->name) && $disallow_private_members;
+	for my $accessor_name ( grep $class->include_method($_), $member->accessor_names($class, $member_name) ) {
+	    $accessor_name =~ s/$member_name/($&)/;
+	    push @accessor_names, $accessor_name;
+	}
+    }
+    return (@accessor_names, map(accessible_accessor_regexps($_, 1), grep(ref $_, $class->parents)));
+}
+
+sub accessible_user_defined_method_regexps($;$) {
+    my ($class, $disallow_private_methods) = @_;
+    return (($disallow_private_methods ? grep ! $class->private($_), $class->user_defined_methods_keys : $class->user_defined_methods_keys),
+	    map(accessible_user_defined_method_regexps($_, 1), grep(ref $_, $class->parents)));
+}
+			# Given element E and class C, return C if E is an
+sub class_of($$;$) {	# element of C; if not, search parents recursively.
+    my ($element_name, $class, $disallow_private_members) = @_;
+    return $class if (defined $class->members($element_name) || defined $class->user_defined_methods($element_name)) && (! $disallow_private_members || ! $class->private($element_name));
+    for my $parent ( grep ref $_, $class->parents ) {
+	my $c = class_of($element_name, $parent, 1);
+	return $c if defined $c;
+    }
+    return undef;
 }
 
 package Class::Generate::Code_Checker;		# This package encapsulates
@@ -727,7 +793,7 @@ sub fragment_as_sub($$\@;\@) {
     if ( $valid_vars && $#$valid_vars >= 0 ) {
 	$form .= 'my(' . join(',', @$valid_vars) . ');';
     }
-    $form .= $code . '};';
+    $form .= '{' . $code . '}};';
 }
 
 package Class::Generate::Array;		# Given a string or an ARRAY, return an
@@ -768,7 +834,7 @@ sub new {				# is a HASH, it *must* contain the key.
     }
     else {
 	croak 'Expected string or hash reference' unless UNIVERSAL::isa($value, 'HASH');
-	croak qq|Missing "$key"| unless exists $value->{$key};
+	croak qq|Missing "$key"|		  unless exists $value->{$key};
 	$self = $value;
     }
     bless $self, $class;
@@ -783,8 +849,8 @@ sub class_containing_method($$) {	# contains the method that the form
     my ($method, $class) = @_;		# (new $class)->$method would invoke.
     for my $parent ( $class->parents ) {# Return undef if no such class exists.
 	local *stab = eval ('*' . (ref $parent ? $parent->name : $parent) . '::');
-	local *method_entry = $stab{$method};
-	if ( defined *method_entry && defined &method_entry ) {
+	if ( exists $stab{$method} &&
+	     do { local *method_entry = $stab{$method}; defined &method_entry } ) {
 	    return $parent;
 	}
 	return class_containing_method($method, $parent);
@@ -814,6 +880,11 @@ sub comment_form {		# Given arbitrary text, return a form that
     $comment =~ s/^/# /mg;
     $comment .= "\n" if substr($comment, -1, 1) ne "\n";
     return $comment;
+}
+
+sub my_decl_form {		# Given a non-empty set of variable names,
+    my @vars = @_;		# return a form declaring them as "my" variables.
+    return 'my ' . ($#vars == 0 ? $vars[0] : '(' . join(', ', @vars) . ')') . ";\n";
 }
 
 package Class::Generate::Member;	# A virtual class describing class
@@ -864,6 +935,11 @@ sub key {
     return $self->{'key'} if $#_ == -1;
     $self->{'key'} = $_[0];
 }
+sub nocopy {
+    my $self = shift;
+    return $self->{'nocopy'} if $#_ == -1;
+    $self->{'nocopy'} = $_[0];
+}
 sub assertion {					# Return a form that croaks if
     my $self = shift;				# the member's assertion fails.
     my $class = $_[0];
@@ -910,8 +986,8 @@ sub param_test {		# Return a form that dies if a constructor
 sub form {				# Return a form for a member and all
     my $self = shift;			# its relevant associated accessors.
     my $class = $_[0];
-    my ($element, $exists, $lvalue, $values, $form, $body);
-    $element = $class->instance_var . '->' . $class->index($self->name);
+    my ($element, $exists, $lvalue, $values, $form, $body, $member_name);
+    $element = $class->instance_var . '->' . $class->index($member_name = $self->name);
     $exists  = $class->existence_test . ' ' . $element;
     $lvalue  = $self->lvalue('$_[0]')					if $self->can('lvalue');
     $values  = $self->values('$_[0]')					if $self->can('values');
@@ -919,17 +995,18 @@ sub form {				# Return a form for a member and all
     $form = '';
     $form .= Class::Generate::Support::comment_form($self->comment)	if defined $self->comment;
 
-    if ( $class->include_method($self->name) ) {
+    if ( $class->include_method($member_name) ) {
 	$body = '';
 	for my $param_form ( $self->member_forms($class) ) {
 	    $body .= $self->$param_form($class, $element, $exists, $lvalue, $values);
 	}
 	$body .= '    ' . $self->param_count_error_form($class) . ";\n" if $WARNING;
-	$form .= $class->sub_form($self->name, $body);
+	$form .= $class->sub_form($member_name, $member_name, $body);
     }
-    $form .= $self->readonly_methods($class, $element, $self->name, $exists)
-									if $self->can('readonly_methods');
-    $form .= $self->modifying_methods($class, $element, $self->name)	if ! $class->readonly($self->name) && $self->can('modifying_methods');
+    for my $a ( grep $_ ne $member_name, $self->accessor_names($class, $member_name) ) {
+	$a =~ s/^([a-z]+)_$member_name$/$1_form/ || $a =~ s/^${member_name}_([a-z]+)$/$1_form/;
+	$form .= $self->$a($class, $element, $member_name, $exists);
+    }
     return $form;
 }
 
@@ -963,14 +1040,16 @@ sub maybe_guarded {			# If warnings are enabled, guard a
     }
 }
 
+sub accessor_names {
+    my $self = shift;
+    my ($class, $name) = @_;
+    return ! ($class->readonly($name) || $class->required($name)) ? ("undef_$name") : ();
+}
+
 sub undef_form {			# Return the form to undefine
     my $self = shift;			# a member.
-    my ($class, $element, $member_name) = @_;
-    return '' if ! $class->include_method('undef_' . $member_name);
-    return "sub undef_$member_name {\n" .
-	   '    my ' . $class->instance_var . " = shift;\n" .
-	   '    ' . $class->undef_form . " $element;\n" .
-	   "}\n";
+    my ($class, $element, $member_name) = @_[0..2];
+    return $class->sub_form($member_name, 'undef_' . $member_name, '    ' . $class->undef_form . " $element;\n");
 }
 
 sub param_count_error_form {	# Return a form that standardizes
@@ -1061,21 +1140,17 @@ sub method_regexp {
 }
 sub accessor_names {
     my $self = shift;
-    my $class = $_[0];
-    return grep $class->include_method($_), ($self->name, 'undef_' . $self->name);
-}
-sub modifying_methods {
-    my $self = shift;
-    my $class = $_[0];
-    return $self->undef_form(@_) if ! $class->required($self->name);
-    return '';
+    my ($class, $name) = @_;
+    return grep $class->include_method($_), ($name, $self->SUPER::accessor_names($class, $name));
 }
 
 sub copy_form {
     my $self = shift;
     my ($from, $to) = @_;
     my $form = "    $to = $from";
-    $form .= '->copy' if $self->base;
+    if ( ! $self->nocopy ) {
+	$form .= '->copy' if $self->base;
+    }
     $form .= " if defined $from;\n";
     return $form;
 }
@@ -1151,8 +1226,11 @@ sub valid_value_form {			# Return a form that tests if a
     my $self = shift;			# parameter is a correct list reference
     my $param = $_[0];			# and (if relevant) if all of its
     my $base = $self->base;		# elements have the correct base type.
-    my $form = 'UNIVERSAL::isa(' . $param . ", '" . $self->ref_isa($param) . "')";
-    $form .= (qq| && ! grep ! UNIVERSAL::isa(\$_, '$base'), | . $self->values($param)) if defined $base;
+    ref($self) =~ /::(\w+)_Member$/;
+    my $form = "UNIVERSAL::isa($param, '" . uc($1) . "')";
+    if ( defined $base ) {
+	$form .= qq| && ! grep ! (defined \$_ && UNIVERSAL::isa(\$_, '$base')), | . $self->values($param);
+    }
     return $form;
 }
 
@@ -1197,44 +1275,28 @@ sub values {
     return '@{' . $_[0] . '}';
 }
 
-sub ref_isa {
-    return 'ARRAY';
-}
-
-sub modifying_methods {
-    my $self = shift;
-    my ($class, $element, $member_name) = @_;
-    my $form = '';
-
-    if ( $class->include_method('add_' . $member_name) ) {
-	$form .=  "sub add_$member_name {\n" .
-	    '    my ' . $class->instance_var . " = shift;\n";
-	$form .=  '    ' . $self->valid_elements_test($class, '@_') . "\n"	    if defined $self->base && $WARNING;
-	$form .=	   Class::Generate::Member_Names::substituted($self->pre)   if defined $self->pre;
-	$form .=  '    push @{' . $element . '}, @_;' . "\n";
-	$form .=	   Class::Generate::Member_Names::substituted($self->post)  if defined $self->post;
-	$form .=  '    ' . $self->assertion($class) . "\n"			    if $WARNING && defined $self->assert;
-	$form .=  "}\n";
-    }
-    $form .=  $self->undef_form($class, $element, $member_name)		    if ! $class->required($member_name);
-    return $form;
-}
-
-sub readonly_methods {
+sub size_form {
     my $self = shift;
     my ($class, $element, $member_name, $exists) = @_;
-    my $form = '';
-    $form .= ('sub ' . $member_name . "_size {\n" .
-	      '    my ' . $class->instance_var . " = shift;\n" .
-	      "    return $exists ? \$#{$element} : -1;\n" .
-	      "}\n")
-	if $class->include_method($member_name . '_size');
-    $form .= ("sub last_$member_name {\n" .
-	      '    my ' . $class->instance_var . " = shift;\n" .
-	      "    return $exists ? $element" . "[\$#{$element}] : undef;\n" .
-	      "}\n")
-	if $class->include_method('last_' . $member_name);
-    return $form;
+    return $class->sub_form($member_name, $member_name . '_size', "    return $exists ? \$#{$element} : -1;\n");
+}
+
+sub last_form {
+    my $self = shift;
+    my ($class, $element, $member_name, $exists) = @_;
+    return $class->sub_form($member_name, 'last_' . $member_name, "    return $exists ? $element" . "[\$#{$element}] : undef;\n");
+}
+
+sub add_form {
+    my $self = shift;
+    my ($class, $element, $member_name, $exists) = @_;
+    my $body = '';
+    $body .=  '    ' . $self->valid_elements_test($class, '@_') . "\n"	    if defined $self->base && $WARNING;
+    $body .=	   Class::Generate::Member_Names::substituted($self->pre)   if defined $self->pre;
+    $body .=  '    push @{' . $element . '}, @_;' . "\n";
+    $body .=	   Class::Generate::Member_Names::substituted($self->post)  if defined $self->post;
+    $body .=  '    ' . $self->assertion($class) . "\n"			    if $WARNING && defined $self->assert;
+    return $class->sub_form($member_name, 'add_' . $member_name, $body);
 }
 
 sub as_var {
@@ -1249,19 +1311,25 @@ sub method_regexp {
 }
 sub accessor_names {
     my $self = shift;
-    my $class = $_[0];
-    my $name = $self->name;
-    return grep $class->include_method($_), ($name, 'add_' . $name, $name . '_size', 'undef_' . $name, 'last_' . $name);
+    my ($class, $name) = @_;
+    my @names = ($name, "${name}_size", "last_$name", $self->SUPER::accessor_names($class, $name));
+    push @names, "add_$name" if ! $class->readonly($name);
+    return grep $class->include_method($_), @names;
 }
 
 sub copy_form {
     my $self = shift;
     my ($from, $to) = @_;
-    my $form = "    $to = [ ";
-    if ( $self->base ) {
-	$form .= "map defined \$_ ? \$_->copy : undef, ";
+    my $form = "    $to = ";
+    if ( ! $self->nocopy ) {
+	$form .= '[ ';
+	$form .= 'map defined $_ ? $_->copy : undef, ' if $self->base;
+	$form .= "\@{$from} ]";
     }
-    $form .= "\@{$from} ] if defined $from;\n";
+    else {
+	$form .= $from;
+    }
+    $form .= " if defined $from;\n";
     return $form;
 }
 
@@ -1302,32 +1370,22 @@ sub values {
     return 'values %{' . $_[0] . '}';
 }
 
-sub ref_isa {
-    return 'HASH';
-}
-
-sub modifying_methods {
-    my $self = shift;
-    my $class = $_[0];
-    return $self->undef_form(@_) if ! $class->required($self->name);
-}
-
-sub readonly_methods {
+sub delete_form {
     my $self = shift;
     my ($class, $element, $member_name, $exists) = @_;
-    my $form = '';
-    $form .= ("sub ${member_name}_keys {\n" .
-	      '    my ' . $class->instance_var . " = shift;\n" .
-	      "    return $exists ? keys \%{$element} : ();\n" .
-	      "}\n")
-	if $class->include_method($member_name . '_keys');
-    $form .= ("sub ${member_name}_values {\n" .
-	      '    my ' . $class->instance_var . " = shift;\n" .
-	      "    return $exists ? values \%{$element} : ();\n" .
-	    "}\n")
-	if $class->include_method($member_name . '_values');
-    return $form;
+    return $class->sub_form($member_name, 'delete_' . $member_name, "    delete \@{$element}{\@_} if $exists;\n");
 }
+
+sub keys_form {
+    my $self = shift;
+    my ($class, $element, $member_name, $exists) = @_;
+    return $class->sub_form($member_name, $member_name . '_keys', "    return $exists ? keys \%{$element} : ();\n");
+}
+sub values_form {
+    my $self = shift;
+    my ($class, $element, $member_name, $exists) = @_;
+    return $class->sub_form($member_name, $member_name . '_values', "    return $exists ? values \%{$element} : ();\n");
+}    
 
 sub as_var {
     my $self = shift;
@@ -1341,27 +1399,31 @@ sub method_regexp {
 }
 sub accessor_names {
     my $self = shift;
-    my $class = $_[0];
-    my $name = $self->name;
-    return grep $class->include_method($_), ($name, $name . '_keys', $name . '_values', 'undef_' . $name);
+    my ($class, $name) = @_;
+    my @names = ($name, "${name}_keys", "${name}_values", $self->SUPER::accessor_names($class, $name));
+    push @names, "delete_$name" if ! $class->readonly($name);
+    return grep $class->include_method($_), @names;
 }
 
 sub copy_form {
     my $self = shift;
     my ($from, $to) = @_;
-    my $form;
-    if ( $self->base ) {
-	$form = "    if ( defined $from ) {\n" .
-	        "\t$to = {};\n" .
-	        "\twhile ( my (\$key, \$value) = each \%{$from} ) {\n" .
-		"\t    $to" . '->{$key} = defined $value ? $value->copy : undef;' . "\n" .
-		"\t}\n" .
-		"    }\n";
+    if ( ! $self->nocopy ) {
+	if ( $self->base ) {
+	    return "    if ( defined $from ) {\n" .
+	           "\t$to = {};\n" .
+		   "\twhile ( my (\$key, \$value) = each \%{$from} ) {\n" .
+		   "\t    $to" . '->{$key} = defined $value ? $value->copy : undef;' . "\n" .
+		   "\t}\n" .
+		   "    }\n";
+	}
+	else {
+	    return "    $to = { \%{$from} } if defined $from;\n";
+	}
     }
     else {
-	$form = "    $to = { \%{$from} } if defined $from;\n";
+	return "    $to = $from if defined $from;\n";
     }
-    return $form;
 }
 
 sub equals {
@@ -1416,6 +1478,42 @@ sub constraints_size {
     my $self = shift;
     return exists $self->{'constraints'} ? $#{$self->{'constraints'}} : -1;
 }
+sub constraint_form {
+    my $self = shift;
+    my ($class, $style, $constraint) = @_;
+    my $param_given = $constraint;
+    $param_given =~ s/\w+/$style->existence_test($&) . ' ' . $style->ref($&)/eg;
+    $constraint =~ s/'/\\'/g;
+    return q|croak '| . $self->name_form($class) . qq|Parameter constraint "$constraint" failed' unless $param_given;|;
+}
+sub param_tests_form {
+    my $self = shift;
+    my ($class, $style) = @_;
+    my $form = '';
+    if ( ! $class->parents && $style->can('params_check_form') ) {
+	$form .= $style->params_check_form($class, $self);
+    }
+    if ( ! $style->isa('Class::Generate::Own') ) {
+	my @public_members = map $class->members($_), $class->public_member_names;
+	for my $param_test ( map $_->param_must_be_checked($class) ? $_->param_test($class) : (), @public_members ) {
+	    $form .= '    ' . $param_test . "\n";
+	}
+	for my $constraint ( $self->constraints ) {
+	    $form .= '    ' . $self->constraint_form($class, $style, $constraint) . "\n";
+	}
+    }
+    return $form;
+}
+sub assertions_form {
+    my $self = shift;
+    my $class = $_[0];
+    my $form = '';
+    $form .= '    ' . $self->assertion($class) . "\n"	     if defined $self->assert;
+    for my $member ( grep defined $_->assert, $class->members_values ) {
+	$form .= '    ' . $member->assertion($class) . "\n";
+    }
+    return $form;
+}
 sub form {
     my $self = shift;
     my $class = $_[0];
@@ -1426,26 +1524,12 @@ sub form {
 	     "    my $cv = " .
 		 ($class->nfi ? 'do { my $proto = shift; ref $proto || $proto }' : 'shift') .
 		 ";\n";
-    if ( $class->virtual && $WARNING ) {
+    if ( $WARNING && $class->virtual ) {
 	$form .= q|    croak '| . $self->name_form($class) . q|Virtual class' unless $class ne '| . $class->name . qq|';\n|;
     }
     $form .= $style->init_form($class, $self)		if ! $class->can_assign_all_params &&
 							   $style->can('init_form'); 
-    if ( $WARNING && ! $class->parents && $style->can('params_check_form') ) {
-	$form .= $style->params_check_form($class, $self);
-    }
-    if ( $WARNING && ! $style->isa('Class::Generate::Own') ) {
-	my @param_tests = map $_->param_test($class), grep $_->param_must_be_checked($class), $class->members_values;
-	if ( @param_tests ) {
-	    $form .= '    ' . join("\n    ", @param_tests) . "\n";
-	}
-	for my $constraint ( $self->constraints ) {
-	    my $param_given = $constraint;
-	    $param_given =~ s/\w+/$style->existence_test($&) . ' ' . $style->ref($&)/eg;
-	    $constraint =~ s/'/\\'/g;
-	    $form .= q|    croak '| . $self->name_form($class) . qq|Parameter constraint "$constraint" failed' unless $param_given;\n|;
-	}
-    }
+    $form .= $self->param_tests_form($class, $style)	if $WARNING;
     if ( defined $class->parents ) {
 	$form .=  $style->self_from_super_form($class);
     }
@@ -1454,24 +1538,20 @@ sub form {
 		 '    bless ' . $iv . ', ' . $cv . ";\n";
     }
     if ( ! $class->can_assign_all_params ) {
-	$form .= $class->size_establishment($iv)    if $class->can('size_establishment');
+	$form .= $class->size_establishment($iv)	if $class->can('size_establishment');
 	if ( ! $style->isa('Class::Generate::Own') ) {
-	    for my $name ( $class->nonprivate_member_names ) {
+	    for my $name ( $class->public_member_names ) {
 		$form .= $class->members($name)->param_assignment_form($class, $style);
 	    }
 	}
     }
-    for my $member ( grep(($style->isa('Class::Generate::Own') || $class->private($_->name)) &&
+    $form .= $class->protected_members_info_form;
+    for my $member ( grep(($style->isa('Class::Generate::Own') || $class->protected($_->name) || $class->private($_->name)) &&
 			  defined $_->default, $class->members_values) ) {
 	$form .= $member->default_assignment_form($class);
     }
     $form .= Class::Generate::Member_Names::substituted($self->post) if defined $self->post;
-    if ( $WARNING ) {
-	$form .= '    ' . $self->assertion($class) . "\n"	     if defined $self->assert;
-	for my $member ( grep defined $_->assert, $class->members_values ) {
-	    $form .= '    ' . $member->assertion($class) . "\n";
-	}
-    }
+    $form .= $self->assertions_form($class)		if $WARNING;
     $form .= '    return ' . $iv . ";\n" .
 	     "}\n";
     return $form;
@@ -1507,7 +1587,7 @@ sub form {
     my $class = $_[0];
     my $form = '';
     $form .= Class::Generate::Support::comment_form($self->comment) if defined $self->comment;
-    $form .= $class->sub_form($self->name, Class::Generate::Member_Names::substituted($self->body));
+    $form .= $class->sub_form($self->name, $self->name, Class::Generate::Member_Names::substituted($self->body));
     return $form;
 }
 
@@ -1530,13 +1610,7 @@ sub add_objects {
 sub form {
     my $self = shift;
     my $class = $_[0];
-    my $form = '';
-    $form .= Class::Generate::Support::comment_form($self->comment) if defined $self->comment;
-    $form .= 'sub ' . $self->name . " {\n" .
-	     '    my ' . $class->class_var . " = shift;\n" .
-	     Class::Generate::Member_Names::substituted_in_class_method($self) .
-	     "}\n";
-    return $form;
+    return $class->class_sub_form($self->name, Class::Generate::Member_Names::substituted_in_class_method($self));
 }
 
 package Class::Generate::Class;			# A virtual class describing
@@ -1623,6 +1697,12 @@ sub private {
     return exists $self->{'private'} ? $self->{'private'}->{$_[0]} : undef if $#_ == 0;
     $self->{'private'}->{$_[0]} = $_[1];
 }
+sub protected {
+    my $self = shift;
+    return exists $self->{'protected'} ? %{$self->{'protected'}} : ()	       if $#_ == -1;
+    return exists $self->{'protected'} ? $self->{'protected'}->{$_[0]} : undef if $#_ == 0;
+    $self->{'protected'}->{$_[0]} = $_[1];
+}
 sub required {
     my $self = shift;
     return exists $self->{'required'} ? %{$self->{'required'}} : ()	     if $#_ == -1;
@@ -1679,7 +1759,7 @@ sub include_method {
 sub member_methods_form {	# Return a form containing methods for all
     my $self = shift;		# non-private members in the class, plus
     my $form = '';		# private members used in class methods.
-    for my $element ( $self->nonprivate_member_names, $self->private_members_used_in_class_methods ) {
+    for my $element ( $self->public_member_names, $self->protected_member_names, $self->private_members_used_in_user_defined_code ) {
 	$form .= $self->members($element)->form($self);
     }
     $form .= "\n" if $form ne '';
@@ -1697,14 +1777,18 @@ sub form {				# Return a form representing
     my $form;
     $form  = 'package ' . $self->name . ";\n";
     $form .= "use strict;\n"						     if $self->strict;
-    $form .= join("\n", map("use $_;", $self->use_packages)) . "\n"	     if defined $self->use_packages;
-    $form .= "use Carp;\n" if $WARNING;
+    $form .= join("\n", map("use $_;", $self->use_packages)) . "\n"	     if $self->use_packages;
+    $form .= "use Carp;\n"						     if $WARNING;
+    $form .= "use vars qw(\$_cginfo);\n" .
+	     "\$_cginfo = '" . $self->base_type . "';\n";
     $form .= "\n";
     $form .= Class::Generate::Support::comment_form($self->comment)	     if defined $self->comment;
-    $form .= $self->isa_decl_form					     if defined $self->parents;
+    $form .= $self->isa_decl_form					     if $self->parents;
     $form .= $self->private_methods_decl_form				     if grep $self->private($_), $self->user_defined_methods_keys;
-    $form .= $self->private_members_decl_form				     if defined $self->private_members_used_in_class_methods;
-    $form .= join("\n", map(class_var_form($_), $self->class_vars)) . "\n\n" if defined $self->class_vars;
+    $form .= $self->private_members_decl_form				     if $self->private_members_used_in_user_defined_code;
+    $form .= $self->protected_methods_decl_form				     if grep $self->protected($_), $self->user_defined_methods_keys;
+    $form .= $self->protected_members_decl_form				     if defined $self->protected;
+    $form .= join("\n", map(class_var_form($_), $self->class_vars)) . "\n\n" if $self->class_vars;
     $form .= $self->constructor->form($self)				     if $self->needs_constructor;
     $form .= $self->member_methods_form;
     $form .= $self->user_defined_methods_form;
@@ -1730,53 +1814,92 @@ sub isa_decl_form {
 	   '@ISA = qw(' . join(' ', @parent_names) . ");\n";
 }
 
-sub sub_form {
-    my $self = shift;
-    my ($name, $body) = @_;
-    my ($form, $is_private);
-    $form = (($is_private = $self->private($name)) ? "\$$name = sub" : "sub $name") . " {\n" .
+sub sub_form {				# Return a declaration for a sub, as an
+    my $self = shift;			# assignment to a variable if not public.
+    my ($member_name, $sub_name, $body) = @_;
+    my ($form, $not_public);
+    $not_public = $self->private($member_name) || $self->protected($member_name);
+    $form = ($not_public ? "\$$sub_name = sub" : "sub $sub_name") . " {\n" .
             '    my ' . $self->instance_var . " = shift;\n" .
 	    $body .
 	    '}';
-    $form .= ';' if $is_private;
+    $form .= ';' if $not_public;
+    return $form . "\n";
+}
+
+sub class_sub_form {			# Ditto, but for a class method.
+    my $self = shift;
+    my ($method_name, $body) = @_;
+    my ($form, $not_public);
+    $not_public = $self->private($method_name) || $self->protected($method_name);
+    $form = ($not_public ? "\$$method_name = sub" : "sub $method_name") . " {\n" .
+	    '    my ' . $self->class_var . " = shift;\n" .
+	    $body .
+	    '}';
+    $form .= ';' if $not_public;
     return $form . "\n";
 }
 
 sub private_methods_decl_form {		# Private methods are implemented as CODE refs.
     my $self = shift;			# Return a form declaring the variables to hold them.
     my @private_methods = grep $self->private($_), $self->user_defined_methods_keys;
-    $#private_methods == 0 and do {
-	return 'my $' . $private_methods[0] . ";\n";
-    };
-    $#private_methods > 0  and do {
-	return 'my (' . join(', ', map('$' . $_, @private_methods)) . ");\n";
-    };
+    return Class::Generate::Support::my_decl_form(map "\$$_", @private_methods);
 }
 
-sub private_members_used_in_class_methods {	# Return the names of all private
-    my $self = shift;				# members called by class methods.
+sub private_members_used_in_user_defined_code {	# Return the names of all private
+    my $self = shift;				# members that appear in user-defined code.
     my @private_members = grep $self->private($_), $self->members_keys;
     return () if ! @private_members;
     my $member_regexp = join '|', @private_members;
     my %private_members;
-    for my $method ( $self->class_methods ) {
-	my $body = $method->body;
-	while ( $body =~ /($member_regexp)/g ) {
+    for my $code ( map($_->body, $self->user_defined_methods_values),
+		   grep(defined $_, (map(($_->pre, $_->post, $_->assert), $self->members_values),
+				     map(($_->post, $_->assert), $self->constructor))) ) {
+	while ( $code =~ /($member_regexp)/g ) {
 	    $private_members{$1}++;
 	}
     }
     return keys %private_members;
 }
 
+sub nonpublic_members_decl_form {
+    my $self = shift;
+    my @members = @_;
+    my @accessor_names = map($_->accessor_names($self, $_->name), @members);
+    return Class::Generate::Support::my_decl_form(map "\$$_", @accessor_names);
+}
+
 sub private_members_decl_form {
     my $self = shift;
-    my @private_members = $self->private_members_used_in_class_methods;
-    $#private_members == 0 and do {
-	return 'my $' . $private_members[0] . ";\n";
-    };
-    $#private_members > 0 and do {
-	return 'my (' . join(', ', map('$' . $_, @private_members)) . ");\n";
-    };
+    return $self->nonpublic_members_decl_form(map $self->members($_), $self->private_members_used_in_user_defined_code);
+}
+
+sub protected_methods_decl_form {
+    my $self = shift;
+    return Class::Generate::Support::my_decl_form(map $self->protected($_) ? "\$$_" : (), $self->user_defined_methods_keys);
+}
+sub protected_members_decl_form {
+    my $self = shift;
+    return $self->nonpublic_members_decl_form(grep $self->protected($_->name), $self->members_values);
+}
+sub protected_members_info_form {
+    my $self = shift;
+    my @protected_members = grep $self->protected($_->name), $self->members_values;
+    my @protected_methods = grep $self->protected($_->name), $self->user_defined_methods_values;
+    return '' if ! (@protected_members || @protected_methods);
+    my $info_index_lvalue = $self->instance_var . '->' . $self->protected_members_info_index;
+    my @protected_element_names = (map($_->accessor_names($class, $_->name), @protected_members),
+				   map($_->name, @protected_methods));
+    if ( $self->parents ) {
+	my $form = '';
+	for my $element_name ( @protected_element_names ) {
+	    $form .= "    ${info_index_lvalue}->{'$element_name'} = \$$element_name;\n";
+	}
+	return $form;
+    }
+    else {
+	return "    $info_index_lvalue = { " . join(', ', map "$_ => \$$_", @protected_element_names) . " };\n";
+    }
 }
 
 sub copy_form {
@@ -1855,9 +1978,17 @@ sub all_members_required {
     }
     return 1;
 }
-sub nonprivate_member_names {
+sub private_member_names {
     my $self = shift;
-    return grep ! $self->private($_), $self->members_keys;
+    return grep $self->private($_), $self->members_keys;
+}
+sub protected_member_names {
+    my $self = shift;
+    return grep $self->protected($_), $self->members_keys;
+}
+sub public_member_names {
+    my $self = shift;
+    return grep ! ($self->private($_) || $self->protected($_)), $self->members_keys;
 }
 
 sub class_var {
@@ -1872,7 +2003,7 @@ sub needs_constructor {
     my $self = shift;
     return (defined $self->members ||
 	    ($self->virtual && $WARNING) ||
-	    scalar($self->parents) == 0 ||
+	    ! $self->parents ||
 	    do {
 		my $c = $self->constructor;
 		(defined $c->post ||
@@ -1894,7 +2025,7 @@ sub new {
     my %super_params = %params;
     delete @super_params{qw(base_index member_index)};
     my $self = $class->SUPER::new($name, %super_params);
-    $self->{'base_index'} = defined $params{'base_index'} ? $params{'base_index'} : 0;
+    $self->{'base_index'} = defined $params{'base_index'} ? $params{'base_index'} : 1;
     $self->{'next_index'} = $self->base_index - 1;
     return $self;
 }
@@ -1910,9 +2041,12 @@ sub base {
     my %param_indices  = map(($_, $self->constructor->style->order($_)), $self->members_keys);
     for ( my $i = 0; $i <= $#sorted_members; $i++ ) {
 	next if $param_indices{$sorted_members[$i]} == $i;
-	return '[ ' . join(', ', map { '$_[' . $param_indices{$_} . ']' } @sorted_members) . ' ]';
+	return '[ undef, ' . join(', ', map { '$_[' . $param_indices{$_} . ']' } @sorted_members) . ' ]';
     }
-    return '[ @_ ]';
+    return '[ undef, @_ ]';
+}
+sub base_type {
+    return 'ARRAY';
 }
 sub members {
     my $self = shift;
@@ -1960,6 +2094,9 @@ sub wholesale_copy {
 sub empty_form {
     return '[]';
 }
+sub protected_members_info_index {
+    return q|[0]|;
+}
 
 package Class::Generate::Hash_Class;		# A subclass of Class defining
 use vars qw(@ISA);				# hash-based classes.
@@ -1968,7 +2105,7 @@ use English;
 
 sub index {
     my $self = shift;
-    return "{'" . $_[0] . "'}";
+    return "{'" . ($self->private($_[0]) ? '*' . $self->name . '_' . $_[0] : $_[0]) . "'}";
 }
 sub base {
     my $self = shift;
@@ -1981,6 +2118,9 @@ sub base {
 	$form .= ', @_[' . $style->pcount . '..$#_]';
     }
     return $form . ' }';
+}
+sub base_type {
+    return 'HASH';
 }
 sub existence_test {
     return 'exists';
@@ -2001,6 +2141,9 @@ sub wholesale_copy {
 sub empty_form {
     return '{}';
 }
+sub protected_members_info_index {
+    return q|{'*protected*'}|;
+}
 
 package Class::Generate::Param_Style;		# A virtual class encompassing
 use strict;					# parameter-passing styles.
@@ -2009,6 +2152,9 @@ use English;
 sub new {
     my $class = shift;
     return bless {}, $class;
+}
+sub keyed_param_names {
+    return ();
 }
 
 sub delete_self_members_form {
@@ -2045,6 +2191,7 @@ sub new {
     my $class = shift;
     my $self = $class->SUPER::new;
     $self->{'holder'} = $_[0];
+    $self->{'keyed_param_names'} = [@_[1..$#_]];
     return $self;
 }
 
@@ -2055,6 +2202,10 @@ sub holder {
 sub ref {
     my $self = shift;
     return '$' . $self->holder . "{'" . $_[0] . "'}";
+}
+sub keyed_param_names {
+    my $self = shift;
+    return @{$self->{'keyed_param_names'}};
 }
 sub positional {
     return 0;
@@ -2078,28 +2229,30 @@ sub self_from_super_form {
     my $self = shift;
     my $class = $_[0];
     return '    my %super_params = %params;' . "\n" .
-	   '    ' . $self->delete_self_members_form($class->nonprivate_member_names) . "\n" .
+	   '    ' . $self->delete_self_members_form($class->public_member_names) . "\n" .
 	   $self->my_decl_form($class) . "(\%super_params);\n";
 }
 sub params_check_form {
     my $self = shift;
     my ($class, $constructor) = @_;
-    my ($cn, @nmns, $form);
-    @nmns = $class->nonprivate_member_names;
+    my ($cn, @valid_names, $form);
+    @valid_names = $self->keyed_param_names;
     $cn = $constructor->name_form($class);
-    $form = "    {\n\tmy \@unknown_params;\n";
-    if ( ! @nmns ) {
-	$form .= "\t\@unknown_params = keys \%params;\n";
-    }
-    elsif ( $#nmns == 0 ) {
-	$form .= "\t\@unknown_params = grep \$_ ne '$nmns[0]', keys \%params;\n";
+    if ( ! @valid_names ) {
+	$form = "    croak '$cn', join(', ', keys %params), ': Not a member' if keys \%params;\n";
     }
     else {
-	$form .= "\tmy %valid_param = (" . join(', ', map("'$_' => 1", @nmns)) . ");\n" .
-		 "\t\@unknown_params = grep ! defined \$valid_param{\$_}, keys \%params;\n";
+	$form =	"    {\n";
+	if ( $#valid_names == 0 ) {
+	    $form .= "\tmy \@unknown_params = grep \$_ ne '$valid_names[0]', keys \%params;\n";
+	}
+	else {
+	    $form .= "\tmy %valid_param = (" . join(', ', map("'$_' => 1", @valid_names)) . ");\n" .
+		     "\tmy \@unknown_params = grep ! defined \$valid_param{\$_}, keys \%params;\n";
+	}
+	$form .= "\tcroak '$cn', join(', ', \@unknown_params), ': Not a member' if \@unknown_params;\n" .
+		 "    }\n";
     }
-    $form .= "\tcroak '$cn', join(', ', \@unknown_params), ': Not a member' if \@unknown_params;\n" .
-	     "    }\n";
     return $form;
 }
 
@@ -2108,6 +2261,14 @@ use strict;					# passing style.  It adds
 use vars qw(@ISA);				# an ordering of parameters.
 @ISA = qw(Class::Generate::Param_Style);
 
+sub new {
+    my $class = shift;
+    my $self = $class->SUPER::new;
+    for ( my $i = 0; $i <= $#_; $i++ ) {
+	$self->{'order'}->{$_[$i]} = $i;
+    }
+    return $self;
+}
 sub order {
     my $self = shift;
     return exists $self->{'order'} ? %{$self->{'order'}} : () if $#_ == -1;
@@ -2127,7 +2288,7 @@ sub existence_test {
 sub self_from_super_form {
     my $self = shift;
     my $class = $_[0];
-    my $lb = scalar($class->nonprivate_member_names) || 0;
+    my $lb = scalar($class->public_member_names) || 0;
     return '    my @super_params = @_[' . $lb . '..$#_];' . "\n" .
 	   $self->my_decl_form($class) . "(\@super_params);\n";
 }
@@ -2135,7 +2296,7 @@ sub params_check_form {
     my $self = shift;
     my ($class, $constructor) = @_;
     my $cn = $constructor->name_form($class);
-    my $max_params = scalar($class->nonprivate_member_names) || 0;
+    my $max_params = scalar($class->public_member_names) || 0;
     return qq|    croak '$cn| . qq|Only $max_params parameter(s) allowed (', \$#_+1, ' given)'| .
 		      " unless \$#_ < $max_params;\n";
 }
@@ -2149,8 +2310,9 @@ use English;
 sub new {
     my $class = shift;
     my $self = $class->SUPER::new;
-    $self->{'pp'} = Class::Generate::Positional->new;
-    $self->{'kv'} = Class::Generate::Key_Value->new($_[0]);
+    $self->{'pp'} = Class::Generate::Positional->new(@{$_[1]});
+    $self->{'kv'} = Class::Generate::Key_Value->new($_[0], @_[2..$#_]);
+    $self->{'pnames'} = { map( ($_ => 1), @{$_[1]}) };
     return $self;
 }
 
@@ -2198,7 +2360,7 @@ sub self_from_super_form {
     my $self = shift;
     my $class = $_[0];
     my @positional_members = keys %{$self->{'pnames'}};
-    my %self_members = map { ($_ => 1) } $class->nonprivate_member_names;
+    my %self_members = map { ($_ => 1) } $class->public_member_names;
     delete @self_members{@positional_members};
     my $m = $self->max_possible_params($class);
     return $self->my_decl_form($class) . '(@_[' . ($m+1) . '..$#_]);' . "\n";
@@ -2207,19 +2369,17 @@ sub max_possible_params {
     my $self = shift;
     my $class = $_[0];
     my $p = $self->pcount;
-    return $p + 2*(scalar($class->nonprivate_member_names) - $p) - 1;
+    return $p + 2*(scalar($class->public_member_names) - $p) - 1;
 }
 sub params_check_form {
     my $self = shift;
-    my $form = $self->{'kv'}->params_check_form(@_);
-    if ( (my $i = index($form, 'qw(')) >= 0 ) {
-	$i += 3;
-	my (%names, $ll);
-	$ll = index(substr($form, $i), ')');
-	%names = map(($_ => 1), split /\s+/, substr $form, $i, $ll);
-	delete @names{keys %{$self->{'pnames'}}};
-	substr($form, $i, $ll) = join ' ', keys %names;
-    }
+    my ($class, $constructor) = @_;
+    my ($form, $cn);
+    $cn = $constructor->name_form($class);
+    $form = $self->{'kv'}->params_check_form(@_);
+    my $max_params = $self->max_possible_params($class) + 1;
+    $form .= qq|    croak '$cn| . qq|Only $max_params parameter(s) allowed (', \$#_+1, ' given)'| .
+			"unless \$#_ < $max_params;\n";
     return $form;
 }
 
@@ -2264,6 +2424,6 @@ sub self_from_super_form {
 
 1;
 
-# Copyright (c) 1999 Steven Wartik. All rights reserved. This program is free
+# Copyright (c) 1999, 2000 Steven Wartik. All rights reserved. This program is free
 # software; you can redistribute it and/or modify it under the same terms as
 # Perl itself.
