@@ -1,0 +1,26 @@
+Revision history for Perl extension Class::Generate.
+
+1.00	Original version; submitted to CPAN on 22 Sept 1999.  No regression
+	tests included.
+
+1.01	Submitted to CPAN on 8 Nov 1999.
+
+	Bug fixes, primarily in passing parameters from a subclass'
+	constructor to its superclass' constructor.
+
+	Added options class_var, instance_var, check_code, and check_default.
+
+	Added copy() and equals() methods.
+
+1.02	Submitted to CPAN on 7 Dec 1999.
+
+	New options and features aimed at optimizing modules to perform
+	specific tasks without overhead of unused functions.
+
+1.03	Submitted to CPAN 0n 3 Jan 2000.
+
+	Added regression tests, and packaged according to accepted Perl style
+	with a Makefile.pl.
+
+	A Subclass may now access its parents' members in user-defined
+	code as identifiers, not through methods.

@@ -1,0 +1,119 @@
+This is the README file for Class::Generate, version 1.03.
+
+Class::Generate is a Perl5 module to simplify creating class
+hierarchies.  It offers typed or untyped scalar, array, and hash
+members, required members, private members, methods (both
+instance and class), and other common features of object-
+oriented software development.  Of course, you can implement all
+these things without a special module, but doing it via
+Class::Generate is much, much more concise.  And futhermore,
+it's much less error prone: if you are using Perl's -w flag,
+Class::Generate will catch many class specification and usage
+errors.
+
+After unpacking this module, type the commands:
+
+  % perl Makefile.PL PREFIX=<dir>
+  % make install
+
+where <dir> is the root of your Perl library directory.  The commands will
+install 2 files:
+
+  --	Generate.pm, which is the file containing the Class::Generate module.
+
+  --	Generate.pod, which contains the documentation, in POD format.  It is
+	sufficiently large that I decided to place it in a separate file.
+
+Copyright (c) 1999 Steven Wartik. All rights reserved. This program is free
+software; you can redistribute it and/or modify it under the same terms as
+Perl itself.
+
+CHANGES IN VERSION 1.01
+
+Parameter passing from a subclass to its superclass constructor is greatly
+improved. Several bugs were detected and corrected. The algorithms are
+smarter.  Superclasses not declared via class() or subclass() are handled
+better.
+
+In 1.00, class() and subclass() sometimes modified their parameters.  They no
+longer do.
+
+Array members have a new accessor, last_<name>, which is a convenient
+abbreviation for the oft-used $obj-><name>($obj-><name>_size).
+
+Each class now has two methods that operate on instances: copy(), to copy
+an object instance, and equals(), to test the equality of two instances.
+
+New options:
+
+  --	"class_var", which lets you choose an identifer other than "$class"
+	as the class variable within a class method.
+
+  --	"instance_var", which lets you choose an identifier other than
+	"$self" as the instance variable within an object method.
+
+  --	"check_code", which lets you control whether user-defined code
+	is checked for correctness.
+
+  --	"check_default", which does the same thing for default values
+	of members.
+
+Some bug fixes:
+
+  --	A bug in checking for duplicate member/method names has been corrected.
+
+  --	A bug wherein class variables with default values were not always being
+	properly declared has been corrected.
+
+  --	List members were not checking for attempts to set read-only members.
+	They do now.
+
+  --	The error message emitted regarding an incorrect number of parameters
+	reported the wrong number.  It now reports the right number.
+
+  --	Code checking in "post" code did not have the context of "pre" code.
+	It now does.
+
+  --	A member's "pre" code needs a trailing semicolon. The error message
+	in 1.00 was not informative.  It is improved in 1.01.
+
+  --	Private members, and members in the own style, were not being assigned
+	their default values in constructors.  They are now.
+
+CHANGES IN VERSION 1.02
+
+New option "nfi" (New From Instance) lets the constructor be invoked via a
+reference as well as a class name.
+
+New "-exclude" flag permits method exclusion.  You get more control over
+how users can access a class.
+
+"parent" is deprecated in favor of "-parent".
+
+Values of -instance_var and -class_var flags are now checked to make sure
+they're valid identifiers.
+
+Generation of the base form is more (though not optimally) intelligent.
+
+Some bug fixes:
+
+  --	The use of the -class_var flag wasn't checked in several places.
+
+  --	In "mix" style, there was a reference to "pp" that should have been
+	to "{pp}".
+
+CHANGES IN VERSION 1.03
+
+Bug fixes:
+
+  --	The -comment flag wasn't recognized.
+
+  --	The conditions under which a constructor is needed have been expanded.
+
+Enhancements:
+
+  --	Parent members may now be accessed from user-defined code in
+	subclasses as regular variables.
+
+  --	The key/value style is a little smarter about catching parameters
+	that aren't members.
