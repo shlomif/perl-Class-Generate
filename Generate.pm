@@ -3,6 +3,7 @@ package Class::Generate;
 require 5.004;
 use strict;
 use Carp;
+use Symbol qw(&delete_package);
 
 BEGIN {
     use vars qw(@ISA @EXPORT_OK $VERSION);
@@ -10,8 +11,8 @@ BEGIN {
 
     require Exporter;
     @ISA = qw(Exporter);
-    @EXPORT_OK = (qw(&class &subclass), qw($save $accept_refs $strict $allow_redefine $class_var $instance_var $check_code $check_default $nfi));
-    $VERSION = '1.05';
+    @EXPORT_OK = (qw(&class &subclass &delete_class), qw($save $accept_refs $strict $allow_redefine $class_var $instance_var $check_code $check_default $nfi));
+    $VERSION = '1.06';
 
     $accept_refs    = 1;
     $strict	    = 1;
@@ -97,18 +98,36 @@ sub subclass(%) {				# One of the two interface
     &$verify_class_type($params{$class_name});
     croak "$cm: A package of this name already exists"		if ! $allow_redefine_for_class && &$class_defined($class_name);
     my $assumed_type = UNIVERSAL::isa($params{$class_name}, 'ARRAY') ? 'ARRAY' : 'HASH';
+    my $child_type = lc($assumed_type);
     for my $p ( $parent->values ) {
 	my $c = Class::Generate::Class_Holder::get($p, $assumed_type);
-	croak qq|$cm: Parent package "$p" does not exist|    if ! defined $c;
-	croak qq|$cm: Base type does not match that of "$p"| if ! UNIVERSAL::isa($params{$class_name}, $class_to_ref_map{ref $c});
-	carp sprintf(qq{$cm: Parent class "%s" was not defined using class() or subclass(); %s reference assumed},
-		     $p, lc($assumed_type))		     if $^W && eval "! exists \$" . $p . '::{_cginfo}';
+	croak qq|$cm: Parent package "$p" does not exist|	if ! defined $c;
+	my $parent_type = lc($class_to_ref_map{ref $c});
+	croak "$cm: $child_type-based class must have $child_type-based parent ($p is $parent_type-based)"
+								if ! UNIVERSAL::isa($params{$class_name}, $class_to_ref_map{ref $c});
+	carp qq{$cm: Parent class "$p" was not defined using class() or subclass(); $child_type reference assumed}
+								if $^W && eval "! exists \$" . $p . '::{_cginfo}';
     }
     &$set_class_type($params{$class_name}, $parent);
     for my $p ( $parent->values ) {
 	$class->add_parents(Class::Generate::Class_Holder::get($p));
     }
     &$process_class($params{$class_name});
+}
+
+sub delete_class(@) {
+    for my $class ( @_ ) {
+	next if ! eval 'defined %' . $class . '::';
+	if ( ! eval 'defined %' . $class . '::_cginfo' ) {
+	    croak $class, ': Class was not declared using ', __PACKAGE__;
+	}
+	delete_package($class);
+	Class::Generate::Class_Holder::remove($class);
+	my $code_checking_package = __PACKAGE__ . '::Code_Checker::check::' . $class . '::';
+	if ( eval 'defined %' . $code_checking_package ) {
+	    delete_package($code_checking_package);
+	}
+    }
 }
 
 $default_pss = Class::Generate::Array->new('key_value');
@@ -413,7 +432,11 @@ $process_class = sub {			# Parse its specification, generate a
 	local $^W = undef;		# Warnings have been reported during
 	eval $form;			# user-defined code analysis.
 	if ( $@ ) {
-	    croak "$cm: Evaluation failed (missing final semicolon in pre/post code?)";
+	    my @lines = split("\n", $form);
+	    my ($l) = ($@ =~ /(\d+)\.$/);
+	    $@ =~ s/\(eval \d+\) //;
+	    croak "$cm: Evaluation failed (problem in ", __PACKAGE__, "?)\n",
+		   $@, "\n", join("\n", @lines[$l-1 .. $l+1]), "\n";
 	}
     }
     Class::Generate::Class_Holder::store($class);
@@ -612,6 +635,10 @@ sub get($;$) {
     return $class;
 }
 
+sub remove($) {
+    delete $classes{$_[0]};
+}
+
 sub form($) {
     my $class = $_[0];
     my $form = qq|use vars qw(\%_cginfo);\n| . '%_cginfo = (';
@@ -696,6 +723,13 @@ my ($member_regexp,		    # Regexp of accessible members.
     $user_defined_methods_regexp,   # Regexp of accessible user-defined instance methods.
     $nonpublic_member_regexp,	    # (For class methods) Regexp of accessors for protected and private members.
     $private_class_methods_regexp); # (Ditto) Regexp of private class methods.
+
+sub accessible_member_regexps($;$);
+sub accessible_members($;$);
+sub accessible_accessor_regexps($;$);
+sub accessible_user_defined_method_regexps($;$);
+sub class_of($$;$);
+sub member_index($$);
 
 sub set_element_regexps() {		# Establish the regexps for
     my @names;				# name substitution.
@@ -893,7 +927,7 @@ sub class_of($$;$) {	# element of C; if not, search parents recursively.
 
 package Class::Generate::Code_Checker;		# This package encapsulates
 use strict;					# checking for warnings and
-use Carp;
+use Carp;					# errors in user-defined code.
 
 my $package_decl;
 my $member_error_message = '%s, member "%s": In "%s" code: %s';
@@ -973,8 +1007,14 @@ sub collect_code_problems($$$$@) {	# warnings and errors.
     local $SIG{__WARN__} = sub { push @warnings, $_[0] };
     local $SIG{__DIE__};
     eval $package_decl . $code_form;
-    push @$warnings, map sprintf($error_message, @params, $_), @warnings;
-    $$errors .= sprintf($error_message, @params, $@) if $@;
+    push @$warnings, map(filtered_message($error_message, $_, @params), @warnings);
+    $$errors .= filtered_message($error_message, $@, @params) if $@;
+}
+
+sub filtered_message {				# Clean up errors and messages
+    my ($message, $error, @params) = @_;	# a little by removing the
+    $error =~ s/\(eval \d+\) //g;		# "(eval N)" forms that perl
+    return sprintf($message, @params, $error);	# inserts.
 }
 
 sub fragment_as_sub($$\@;\@) {
@@ -1038,7 +1078,7 @@ sub new {				# is a HASH, it *must* contain the key.
 package Class::Generate::Support;	# Miscellaneous support routines.
 no strict;				# Definitely NOT strict!
 					# Return the superclass of $class that
-sub class_containing_method($$) {	# contains the method that the form
+sub class_containing_method {		# contains the method that the form
     my ($method, $class) = @_;		# (new $class)->$method would invoke.
     for my $parent ( $class->parents ) {# Return undef if no such class exists.
 	local *stab = eval ('*' . (ref $parent ? $parent->name : $parent) . '::');
@@ -1111,12 +1151,19 @@ sub assert {
 sub post {
     my $self = shift;
     return $self->{'post'} if $#_ == -1;
-    $self->{'post'} = $_[0];
+    $self->{'post'} = possibly_append_semicolon_to($_[0]);
 }
 sub pre {
     my $self = shift;
     return $self->{'pre'} if $#_ == -1;
-    $self->{'pre'} = $_[0];
+    $self->{'pre'} = possibly_append_semicolon_to($_[0]);
+}
+sub possibly_append_semicolon_to {	# If user omits a trailing semicolon
+    my $code = $_[0];			# (or doesn't use braces), add one.
+    if ( $code !~ /[;\}]\s*\Z/s ) {
+	$code =~ s/\s*\Z/;$&/s;
+    }
+    return $code;
 }
 sub comment {
     my $self = shift;
@@ -1149,11 +1196,11 @@ sub param_message {		# Encapsulate the messages for
     my $name = $self->name;
     my $prefix_form = q|croak '| . $class->name . '::new' . ': ';
     $class->required($name) && ! $self->default and do {
-	return $prefix_form . qq|Missing or invalid "$name" parameter'| if $self->can_be_invalid;
-	return $prefix_form . qq|Missing "$name" parameter'|;
+	return $prefix_form . qq|Missing or invalid value for $name'| if $self->can_be_invalid;
+	return $prefix_form . qq|Missing value for required member $name'|;
     };
     $self->can_be_invalid and do {
-	return $prefix_form . qq|Invalid "$name" parameter'|;
+	return $prefix_form . qq|Invalid value for $name'|;
     };
 }
 
@@ -1202,10 +1249,10 @@ sub form {				# Return a form for a member and all
     return $form;
 }
 
-sub invalid_value_assignment_message {	# Return a form that dies
-    my $self = shift;			# unless a parameter is of the
+sub invalid_value_assignment_message {	# Return a form that dies, reporting
+    my $self = shift;			# a parameter that's not of the
     my $class = $_[0];			# correct type for its element.
-    return q|croak '| . $self->name_form($class) . q|Invalid parameter value'|;
+    return 'croak \'' . $self->name_form($class) . 'Invalid parameter value (expected ' . $self->expected_type_form . ')\'';
 }
 sub valid_value_test_form {		# Return a form that dies unless
     my $self = shift;			# a value is of the correct type
@@ -1333,6 +1380,10 @@ sub accessor_names {
     my $self = shift;
     my ($class, $name) = @_;
     return grep $class->include_method($_), ($name, $self->SUPER::accessor_names($class, $name));
+}
+sub expected_type_form {
+    my $self = shift;
+    return $self->base;
 }
 
 sub copy_form {
@@ -1504,6 +1555,15 @@ sub accessor_names {
     push @names, "add_$name" if ! $class->readonly($name);
     return grep $class->include_method($_), @names;
 }
+sub expected_type_form {
+    my $self = shift;
+    if ( defined $self->base ) {
+	return 'reference to array of ' . $self->base;
+    }
+    else {
+	return 'array reference';
+    }
+}
 
 sub copy_form {
     my $self = shift;
@@ -1590,6 +1650,15 @@ sub accessor_names {
     my @names = ($name, "${name}_keys", "${name}_values", $self->SUPER::accessor_names($class, $name));
     push @names, "delete_$name" if ! $class->readonly($name);
     return grep $class->include_method($_), @names;
+}
+sub expected_type_form {
+    my $self = shift;
+    if ( defined $self->base ) {
+	return 'reference to hash of ' . $self->base;
+    }
+    else {
+	return 'hash reference';
+    }
 }
 
 sub copy_form {

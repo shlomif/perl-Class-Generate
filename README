@@ -158,3 +158,15 @@ Enhancements:
   --	_cginfo (see version 1.04) now holds much more information than just a
 	 class' base type.  Classes saved to files are almost completely
 	identical to classes generated dynamically.
+
+CHANGES IN VERSION 1.06:
+
+Enhancements:
+
+  --	Trailing semicolons are automatically appended to pre/post code if they
+	were missing ("Do what I mean").
+
+  --	Diagnostics have been improved.
+
+  --	A subroutine delete_class() has been added, to encapsulate the
+	operation of deleting a class.

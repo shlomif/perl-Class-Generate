@@ -54,3 +54,11 @@ Revision history for Perl extension Class::Generate.
 	The mechanism for recording class declarations has been improved. It's
 	been modularized, with functions that make classes saved to files
 	understood when they're read back in.
+
+1.06	Trailing semicolons are automatically appended to pre/post code if they
+	were missing ("Do what I mean").
+
+	Diagnostics have been improved.
+
+	A subroutine delete_class() has been added, to encapsulate the
+	operation of deleting a class.

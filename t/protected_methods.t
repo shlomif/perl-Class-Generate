@@ -27,7 +27,8 @@ Test {
 	'&set_prot_mem' => '@prot_mem = @_;',
         '&use_prot_meths' => '@prot_mem = localtime;
 			      &prot_meth_2();
-			      $priv_mem{&prot_meth_1} = &last_prot_mem;',
+			      $priv_mem{&prot_meth_1} = &last_prot_mem;
+			      return 1;',
 	new => { style => 'positional mem' }
     }
 };

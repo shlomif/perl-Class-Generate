@@ -4,7 +4,7 @@ Class::Generate - Generate Perl class hierarchies
 
 =head1 SYNOPSIS
 
- use Class::Generate qw(class subclass);
+ use Class::Generate qw(class subclass delete_class);
 
  # Declare class Class_Name, with the following types of members:
  class
@@ -45,6 +45,7 @@ Class::Generate - Generate Perl class hierarchies
  $obj->h($key, $value);			# Assign $value to hash member $key.
  %hash = $obj->h;			# Access whole hash.
  $hash_member_value = $obj->h($key);	# Access hash member value $key.
+ $obj->delete_h($key);			# Delete slot occupied by $key. 
  @keys = $obj->h_keys;			# Access keys of member h.
  @values = $obj->h_values;		# Access values of member h.
 
@@ -145,8 +146,8 @@ If called with arguments, it sets the member to the first value:
 
 If the C<Class_Name> form is used, the member must be a reference blessed
 to the named class or to one of its subclasses.
-If Perl's C<-w> flag is used,
-the method will C<croak> if the argument is not a blessed reference
+If Perl's C<-w> flag is used, the method will C<croak> (see L<Carp>)
+if the argument is not a blessed reference
 to an instance of C<Class_Name> or one of its subclasses.
 
     class Person => [
@@ -432,6 +433,11 @@ For instance:
     print $p->age;	# Prints 30.
     $p->age(15);
     print $p->age;	# Prints 30 again.
+
+The trailing semicolon used to be required, but everyone forgot it.
+As of version 1.06 it's optional:
+C<'$age*=2'> is accepted and equivalent to C<'$age*=2;'>
+(but see L<"BUGS">).
 
 You reference array and hash members as usual
 (except for testing for definition; see L<"BUGS">).
@@ -743,7 +749,7 @@ An example:
 			       abs(\$imag - \$o->imag) < $epsilon;|
     };
 
-You can use the C<private> attribute to create a class
+If you declare C<&equals> to be private, you create a class
 whose instances cannot be tested for equality except within the class.
 
 =head1 THE SUBCLASS FUNCTION
@@ -853,7 +859,23 @@ The following code will generate a run-time error:
     ];
     subclass Bar => [
 	'&method' => { protected => 1, body => '$self->SUPER::method;' }
-    ];
+    ], -parent => 'Foo';
+
+=head1 THE DELETE_CLASS FUNCTION
+
+You can delete classes you declare using C<Class::Generate>,
+after which you can declare another class with the same name.
+Use the C<delete_class> function,
+which accepts as arguments one or more class names:
+
+    class Person => [ name => '$' ];
+    delete_class 'Person';			 # Nah...
+    class Name => [ last => '$', first => '$' ]; # ... let's really encapsulate.
+    class Person => [ name = 'Name' ];		 # That's better.
+
+This function silently ignores classes that don't exist,
+but it croaks if you try to delete a package that wasn't declared
+using C<Class::Generate>.
 
 =head1 FLAGS
 
@@ -875,7 +897,7 @@ and C<Time::localtime> packages.
 Write the class as follows:
 
     class Date_User => [ ... ],
-	'-use' => 'Time::Local Time::localtime';
+	-use => 'Time::Local Time::localtime';
 
 Any code you add to C<Date_User> can now access the
 time functions declared in these two packages.
@@ -883,7 +905,7 @@ time functions declared in these two packages.
 To import functions, you need to use the array reference form:
 
     class Foo => [ ... ],
-	'-use' => ["FileHandle 'autoflush'"];
+	-use => ["FileHandle 'autoflush'"];
 
 Otherwise, the C<class> function would assume you want to use two packages,
 C<Filehandle> and C<'autoflush'>.
@@ -1224,7 +1246,7 @@ and you only want to add values:
 	parents => '@Person',
 	new	=> { style => 'positional name parents' }
     ],
-	'-options' => { accept_refs => 0 };
+	-options => { accept_refs => 0 };
     $p = Person->new('Will Robinson');
     $p->add_parents( Person->new('Maureen Robinson'),
 		     Person->new('John Robinson') );
@@ -1241,7 +1263,7 @@ for passing a single parameter to the method.
 By default, the classes include a C<use strict> directive.
 You can change this (if you must) using a false value for the C<strict> option.
 
-=head2 Amending a Package
+=head2 Redefining an Existing Package
 
 C<Class::Generate> is intended for generating classes,
 not packages containing classes.
@@ -1352,6 +1374,32 @@ These messages are prefixed by one of the following phrases:
 
 where C<E<lt>xE<gt>> is one of C<pre>, C<post>, or C<assert>.
 See L<perldiag> for an explanation of such messages.
+The message will include a line number that is relative to the
+lines in the erroneous code fragment,
+as well as the line number on which the class begins.
+For instance, suppose the file C<stacks.pl> contains the following code:
+
+    #! /usr/local/bin/perl -w 
+    use Class::Generate 'class';
+    class Stack => [
+	top_e	 => { type => '$', private => 1, default => -1 },
+	elements => { type => '@', private => 1, default => '[]' },
+	'&push' => '$elements[++$top_e] = $_[0];',
+	'&pop'  => '$top_e--;',
+	'&top'  => 'return $elements[$top_e];'
+    ];
+    class Integer_Stack => [
+	'&push' => q{die 'Not an integer' if $_[0] !~ /^-?\d+$/;
+		     $self->SUPER:push($_[0]);}	# Meant "::", not ":".
+    ], -parent => 'Stack';
+
+Executing this file yields:
+
+    Subclass "Integer_Stack", method "push": syntax error at line 2,
+     near "->SUPER:"
+     at stacks.pl line 10
+
+meaning the error occurs in the second line of the C<push> method.
 
 =head2 Compile-Time Diagnostics
 
@@ -1390,6 +1438,13 @@ or change the instance variable name using the C<instance_var> option.
 
 (W) If member is private or protected, it cannot be a constructor parameter.
 
+=item %s: %s-based class must have %s-based parent (%s is %s-based)
+
+(F) If the class specified using C<subclass> is specified as an array reference,
+its parent must also be specified as array references.
+If it is specified as a hash reference,
+its parent(s) must be specified as hash references.
+
 =item %s: A package of this name already exists
 
 (F) The name passed to C<class> or C<subclass> must not be
@@ -1400,13 +1455,6 @@ unless the C<allow_redefine> option is true.
 
 (F) Multiple inheritance is only permitted for class hierarchies
 specified as hash references.
-
-=item %s: Base type does not match that of "%s"
-
-(F) If the class specified using C<subclass> is specified as an array reference,
-its parent(s) must also be specified as array references.
-If it is specified as a hash reference,
-its parent(s) must be specified as hash references.
 
 =item %s: Cannot append to "%s": %s
 
@@ -1424,6 +1472,11 @@ specified operating system-specific reason.
 
 (F) The class specification includes user defined code
 that is not valid Perl.
+
+=item %s: Class was not declared using Class::Generate
+
+(F) An argument of C<delete_class> is the name of a package
+that wasn't declared using C<class> or C<subclass>.
 
 =item %s: Default value for "%s" is not correctly typed
 
@@ -1453,11 +1506,15 @@ Only public members can be passed as a constructor parameter.
 (F) A class' constructor specifies a style that requires listing members,
 and the list contains the same member name more than once.
 
-=item %s: Evaluation failed (missing final semicolon in pre/post code?)
+=item %s: Evaluation failed (problem in Class::Generate?)
 
-(F) Usually this error occurs if a class member has
-a C<pre> or C<post> code fragment that does not end with a semicolon.
-The other cause is an error in C<Class::Generate>.
+(F) You have done something the creator of C<Class::Generate> did
+not anticipate, you've found a bug (or both),
+or you've got a trailing comment in user-defined code (see L<"BUGS">).
+Please report either of the first two cases.
+(This message is accompanied by some contextual information that can help
+you identify the error.
+Please include that information too.)
 
 =item %s: Extra parameters in style specifier
 
@@ -1666,7 +1723,7 @@ can cause the following diagnostics to be emitted:
 (F) One of the class' accessors was invoked with
 too many or too few parameters.
 
-=item %s: Invalid parameter value
+=item %s: Invalid parameter value (expected %s)
 
 (F) One of the class' accessors was invoked with a parameter
 of the wrong type.
@@ -1694,21 +1751,23 @@ Its constructor was invoked with one or more key/value pairs whose keys
 don't name a member of the class.
 This message often occurs when you forget that keys are needed.
 
-=item %s::new: Invalid "%s" parameter
+=item %s::new: Invalid value for %s
 
-(F) The class' constructor was invoked with a parameter
-of the wrong type.
+(F) The class' constructor was given an improper value for a member.
+If the member is a list, the value passed is the wrong kind of list
+(or not a list).
+If the member is typed, the value passed isn't of that type.
 
-=item %s::new: Missing "%s" parameter
+=item %s::new: Missing or invalid value for %s
 
-(F) The class' constructor was invoked without a required parameter.
-
-=item %s::new: Missing or invalid "%s" parameter
-
-(F) The class' constructor was invoked without a required parameter,
-or the parameter was not of the correct type
+(F) The class' constructor was invoked without a value for a required member,
+or the value was not of the correct type
 (e.g., hash reference where an array reference is needed,
 not a blessed reference to the necessary class).
+
+=item %s::new: Missing value for required member %s
+
+(F) The class' constructor was invoked without a required parameter.
 
 =item %s::new: Odd number of parameters
 
@@ -1729,6 +1788,8 @@ than the class has members.
 =head1 SEE ALSO
 
 PERLDIAG(1),
+PERLOBJ(1),
+Carp(3),
 Class::Struct(3)
 
 =head1 COPYRIGHT
@@ -1773,7 +1834,7 @@ The C<&equals> and C<&copy> functions do not understand multiple inheritance.
 Member and method name substitution in code
 can be fooled if a member name is also declared as a variable.
 Unfortunately the C<class> function doesn't detect this error.
-For instance, in the following class, the C<$f> of C<$f[0]> is mistaken for
+In the following class, the C<$f> of C<$f[0]> is mistaken for
 scalar member C<f>, not array variable C<@f>:
 
     class Foo => {
@@ -1796,6 +1857,31 @@ Tne entire model of member overriding may change in some future version.
 
 The C<subclass> function doesn't test for circularity
 in inheritance hierarchies.
+
+The C<-allow_redefine> option is intended to let you add functionality to
+packages I<not> declared using C<Class::Generate>.
+This rule isn't strictly enforced, but probably should be.
+If you redefine a class, you silently change the constructor,
+as well as the C<copy> and C<equals> methods.
+Consider the following:
+
+    class Foo => [ mem1 => '$' ];
+    class Foo => [ mem2 => '@' ], # Intends to add a member to Foo.
+	-options => { allow_redefine => 1 };
+    $o = new Foo;
+    $o->mem1('this works');
+    $o->mem2([qw(so does this)]);
+    $p = $o->copy;		  # But this doesn't copy mem1.
+    $p = new Foo mem1 => 'x';	  # And this fails.
+
+Use inheritance instead.
+
+The algorithm that adds a trailing semicolon to C<pre> and C<post> code
+uses a simple regular expression to test for a semicolon's presence.
+Please don't strain it by doing odd things like embedding comments:
+
+    post => 'print "foo"  # This will fail, with an obscure error message.',
+    post => 'print "foo"' # Use this form instead.
 
 =head1 NOTES
 
