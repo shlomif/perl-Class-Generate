@@ -1,6 +1,7 @@
-#! /usr/local/bin/perl -w
+#! /usr/local/bin/perl
 
 use lib qw(./t);
+use warnings;
 use strict;
 use Test_Framework;
 use Class::Generate qw(&class &subclass);

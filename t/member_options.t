@@ -1,6 +1,7 @@
-#! /usr/local/bin/perl -w
+#! /usr/local/bin/perl
 
-use lib qw(./t ../..);
+use lib qw(./t);
+use warnings;
 use strict;
 use Test_Framework;
 
@@ -14,7 +15,6 @@ use Test_Framework;
 use Class::Generate qw(&class);
 
 use vars qw($o);
-$^W = 1;
 
 Test {
     class Default => [ mem => "\$" ];

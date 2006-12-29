@@ -1,5 +1,6 @@
 package Test_Framework;
 
+use warnings;
 use strict;
 use Exporter;
 use vars qw(@ISA @EXPORT);

@@ -62,3 +62,10 @@ Revision history for Perl extension Class::Generate.
 
 	A subroutine delete_class() has been added, to encapsulate the
 	operation of deleting a class.
+
+1.07	Class::Generate now understands the warnings pragma in perl 5.8.
+	This has been effected by adding several options: warnings, check_code,
+	and check_params.
+
+	The MIX parameter style wasn't working for classes with no positional
+	parameters.

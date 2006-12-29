@@ -146,9 +146,8 @@ If called with arguments, it sets the member to the first value:
 
 If the C<Class_Name> form is used, the member must be a reference blessed
 to the named class or to one of its subclasses.
-If Perl's C<-w> flag is used, the method will C<croak> (see L<Carp>)
-if the argument is not a blessed reference
-to an instance of C<Class_Name> or one of its subclasses.
+The method will C<croak> (see L<Carp>) if the argument is not
+a blessed reference to an instance of C<Class_Name> or one of its subclasses.
 
     class Person => [
 	name => '$',
@@ -167,7 +166,7 @@ to an instance of C<Class_Name> or one of its subclasses.
 The member is an array.
 If the C<@Class> form is used, all members of the array must be
 a blessed reference to C<Class> or one of its subclasses.
-An array member has three associated methods:
+An array member has four associated methods:
 
 =over 4
 
@@ -225,7 +224,7 @@ For example:
 The member is a hash.
 If the C<%Class> form is used, all values in the hash
 must be a blessed reference to C<Class> or one of its subclasses.
-A hash member has three associated methods:
+A hash member has four associated methods:
 
 =over 4
 
@@ -234,7 +233,7 @@ A hash member has three associated methods:
 With no arguments, C<name> returns the member's whole hash.
 
 With one argument that is a hash reference,
-the member's value becomes the argument.
+the member's value becomes the key/value pairs in that reference.
 With one argument that is a string,
 the element of the hash keyed by that string is returned.
 If no such element exists, C<name> returns C<undef>.
@@ -284,7 +283,8 @@ This method undefines a member C<m>.
 
 =head1 OBJECT INSTANCE METHODS
 
-There are also methods that you can invoke on an object instance.
+C<Class::Generate> also generates methods
+that you can invoke on an object instance.
 These are as follows:
 
 =head2 Copy
@@ -910,8 +910,6 @@ To import functions, you need to use the array reference form:
 Otherwise, the C<class> function would assume you want to use two packages,
 C<Filehandle> and C<'autoflush'>.
 
-Package C<Carp> is automatically used if $WARNING is true.
-
 =item -class_vars=>list
 
 A class can have class variables,
@@ -967,7 +965,8 @@ The string serves as a comment for the class.
 
 =item -options=>{ options }
 
-This flag lets you specify options that alter your class' behavior.
+This flag lets you specify options
+that alter the behavior of C<Class::Generate>.
 See L<"OPTIONS">.
 
 =item -exclude=>string
@@ -1090,8 +1089,9 @@ Access the parameters through C<@_>, as usual in Perl:
 
 If C<own> is followed by a space, and the class has a parent,
 everything after the space is treated as
-a space-separated list of Perl expressions.
-The expressions are passed to the superclass constructor in the order given.
+a space-separated list of Perl expressions,
+and these expressions are passed to the superclass constructor.
+The expressions are passed in the order given.
 Thus:
 
     subclass Child => [
@@ -1263,6 +1263,79 @@ for passing a single parameter to the method.
 By default, the classes include a C<use strict> directive.
 You can change this (if you must) using a false value for the C<strict> option.
 
+=head2 Warnings
+
+You can use Perl's lexical warnings through C<Class::Generate>.
+Any class you generate can have C<use warnings> or not, as you see fit.
+This is controlled by the C<warnings> option,
+the value of which may be:
+
+=over 4
+
+=item *
+
+A scalar, in which case your class will be generated with
+C<use warnings> or C<no warnings>,
+depending on whether the scalar evaluates to true or false, respectively.
+If the scalar is C<undef>,
+your class won't even contain C<no warnings>.
+If the scalar looks like a positive integer,
+your class will contain the single line:
+
+    use warnings;
+
+If the scalar doesn't look like a positive integer,
+its value is appended after C<warnings>.
+Thus:
+
+    -options => { warnings => 'FATAL => qw(void)' }
+
+yields:
+
+    use warnings FATAL => qw(void);
+
+=item *
+
+An array reference containing a list of key/value pairs.
+Valid keys are C<register>, C<use>, and C<no>.
+If the key is C<register> and the value evaluates to true,
+your class will contain a C<use warnings::register> line.
+If the key is C<use> or C<no>, your class will enable or
+disable warnings, respectively,
+according to the value that follows.
+If the value looks like a positive integer,
+your class will contain a C<use>/C<no warnings> line.
+If it looks like anything else that evaluates to true,
+your class will contain a C<use>/C<no warnings> line
+followed by the value's string representation.
+
+Warnings are enabled and disabled in the order they appear in the array.
+For example:
+
+    -options => { warnings => [use => 1, no => 'qw(io)', register => 1] }
+
+yields:
+
+    use warnings;
+    no warnings qw(io);
+    use warnings::register;
+
+Perl won't let you specify a warnings category until you import a module,
+so the following won't work:
+
+    class Too_Soon => { ... }, -options => { warnings => { register => 1 } };
+    use warnings 'Too_Soon';
+
+because the C<use warnings> statement is processed at compile time.
+In fact, you probably don't want to use the C<register> key except for
+classes you save.
+See L<"Saving the Classes">.
+
+=back
+
+The default value of the C<warnings> option is 1,
+meaning your class will contain a C<use warnings> pragma.
+
 =head2 Redefining an Existing Package
 
 C<Class::Generate> is intended for generating classes,
@@ -1327,7 +1400,7 @@ to see if it yields a value of the correct type.
 This may cause unwanted behavior
 if the string is an expression with side effects.
 Furthermore, your program will behave differently depending on
-whether warnings are in effect (see L<SANITY CHECKING>).
+whether warnings are in effect.
 
 If you set the C<check_default> option to false,
 C<class> and C<subclass> will not check the types of default values.
@@ -1347,16 +1420,26 @@ you can use both:
     $o = C->new;	# Always works.
     $p = $o->new;	# Works if nfi option is true.
 
-=head1 SANITY CHECKING
+=head2 Checking Parameter Values
 
-Several sections have mentioned errors that will cause your program to croak.
-Actually this only happens if you use Perl's C<-w> flag.
-Once your classes are I<fully> debugged,
-you may want to stop using C<-w> for the sake of efficiency.
-But go slow on that.
-Remember, you can still make mistakes in code that invokes a class.
+Several sections have mentioned errors
+that will cause your classes to croak if used incorrectly.
+Examples include constructor invocation that omits a required member's value
+and passing a scalar where a reference is expected.
+These checks are useful, especially during debugging,
+but they can slow your code.
+If you set the C<check_params> option to a false value,
+C<Class::Generate> will omit these checks.
+Furthermore, if you set C<check_params> to C<undef>,
+C<Class::Generate> will omit assertions too.
 
-Assertions are included only if the C<-w> flag is used.
+A class that checks parameters automatically includes the
+L<Carp> package.
+C<Class::Generate> generates code that uses methods in this package,
+especially C<croak>, to report errors.
+
+The downside of changing the default C<check_params> value should be
+obvious to any experienced programmer.
 
 =head1 DIAGNOSTICS
 
@@ -1364,13 +1447,13 @@ The following is a list of the diagnostics the C<class> and C<subclass>
 functions can produce.
 Each diagnostic is prefixed with "(F)" or "(W)",
 indicating that it is fatal or a warning, respectively.
-Warning messages are only emitted if you use Perl's C<-w> flag.
+Warning messages are only emitted if you use the C<warnings> pragma.
 
 Classes that contain user defined code can yield Perl errors and warnings.
 These messages are prefixed by one of the following phrases:
 
-    Class_Name: Member "name": In "<x>" code:
-    Class_Name: Method "name":
+    Class class_name, member "name": In "<x>" code:
+    Class class_name, method "name":
 
 where C<E<lt>xE<gt>> is one of C<pre>, C<post>, or C<assert>.
 See L<perldiag> for an explanation of such messages.
@@ -1379,7 +1462,8 @@ lines in the erroneous code fragment,
 as well as the line number on which the class begins.
 For instance, suppose the file C<stacks.pl> contains the following code:
 
-    #! /usr/local/bin/perl -w 
+    #! /bin/perl
+    use warnings;
     use Class::Generate 'class';
     class Stack => [
 	top_e	 => { type => '$', private => 1, default => -1 },
@@ -1397,7 +1481,7 @@ Executing this file yields:
 
     Subclass "Integer_Stack", method "push": syntax error at line 2,
      near "->SUPER:"
-     at stacks.pl line 10
+     at stacks.pl line 11
 
 meaning the error occurs in the second line of the C<push> method.
 
@@ -1421,6 +1505,12 @@ containing a space-separated list of regular expressions,
 or a reference to an array of strings,
 each of which specifies one or more regular expressions.
 
+=item "-pod" flag must be scalar value or hash reference
+
+(F) The value of the C<-pod> flag must be either a scalar
+that evaluates to a boolean value or a hash reference
+whose elements denote sections of POD documentation.
+
 =item "-use" flag must be string or array reference
 
 (F) The value of the C<-use> flag must be a string
@@ -1433,6 +1523,11 @@ each of which is a package to use.
 (F) The member name conflicts with the instance variable name for the class.
 Change the member name,
 or change the instance variable name using the C<instance_var> option.
+
+=item %s: "-pod" flag must be scalar value or hash reference
+
+(F) You gave a value of the C<-pod> flag for the <class> or <subclass>
+function that isn't a scalar value or a hash reference.
 
 =item %s: "required" attribute ignored for private/protected member "%s"
 
@@ -1574,6 +1669,11 @@ or an identifier.
 (W) One of the attributes given in the hash reference specifying the named
 member is not a recognized attribute.
 
+=item %s: Member "%s": Value of pod must be a hash reference
+
+(F) The value of the C<pod> attribute given in the hash reference
+specifying the name member is not a hash reference.
+
 =item "%s: Member "%s" declared both private and protected (protected assumed)
 
 (W) The member's specification has C<TRUE> values for both the C<protected>
@@ -1705,18 +1805,36 @@ but is not a recognized flag.
 (W) The C<-options> flag includes a key/value pair
 where the key is not a recognized option.
 
+=item Warnings array reference must have even number of elements
+
+(F) Your array reference to the C<warnings> option isn't valid.
+It must be a list of key/value pairs.
+See L<Warnings>.
+
+=item Warnings array: Unknown key "%s"
+
+(F) A key in the array used as the value of the C<warnings> option must be
+C<register>, C<use>, or C<no>.
+
+=item Warnings must be scalar value or array reference
+
+(F) You specified a value for the C<warnings> option that isn't
+a scalar or a array reference.  See L<Warnings>.
+
 =back
 
 =head2 Run-Time Diagnostics
 
-If you use the C<-w> flag, your classes will contain code that
+Unless you change the default values of
+C<Class::Generate>'s diagnostic options,
+your classes will contain code that
 can cause the following diagnostics to be emitted:
 
 =over 4
 
 =item %s: Failed assertion: %s
 
-(F) The specified assertion failed.
+(F) The specified assertion did not evaluate to true.
 
 =item %s: Invalid number of parameters
 
@@ -1788,16 +1906,17 @@ than the class has members.
 =head1 SEE ALSO
 
 PERLDIAG(1),
+PERLLEXWARN(1),
 PERLOBJ(1),
 Carp(3),
 Class::Struct(3)
 
 =head1 COPYRIGHT
 
-Copyright (c) 1999, 2000 Steven Wartik.
-All rights reserved. This program is free
-software; you can redistribute it and/or modify it under the same terms as
-Perl itself.
+Copyright (c) 1999, 2000, 2006 Steven Wartik.
+All rights reserved.
+This program is free software;
+you can redistribute it and/or modify it under the same terms as Perl itself.
 
 =head1 BUGS
 
@@ -1861,7 +1980,7 @@ in inheritance hierarchies.
 The C<-allow_redefine> option is intended to let you add functionality to
 packages I<not> declared using C<Class::Generate>.
 This rule isn't strictly enforced, but probably should be.
-If you redefine a class, you silently change the constructor,
+If you redefine a class, you change the constructor,
 as well as the C<copy> and C<equals> methods.
 Consider the following:
 

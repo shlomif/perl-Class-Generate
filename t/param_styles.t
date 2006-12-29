@@ -1,6 +1,7 @@
-#! /usr/local/bin/perl -w
+#! /usr/local/bin/perl
 
 use lib qw(./t);
+use warnings;
 use strict;
 use Test_Framework;
 use Class::Generate qw(&class &subclass);
@@ -56,5 +57,24 @@ Test {
 Test { members_valid KV_Subclass->new(m1 => 1, m2 => 2, m3 => 3, m4 => 4), 4 };
 Test { members_valid Pos_Subclass->new(4, 1, 2, 3), 4 };
 Test { members_valid Mix_Subclass->new(5, m6 => 6, 1, 2, m3 => 3, m4 => 4), 6 };
+
+Test {
+    class Mix_Parent => {
+	map(($_ => SPEC), qw(m1 m2 m3)),
+	new => { style => 'mix m1' }
+    };
+    class Mix_Child_1 => {
+	new => { style => 'mix' }
+    }, -parent => 'Mix_Parent';
+    class Mix_Child_2 => {
+	map(($_ => SPEC), qw(m4)),
+	new => { style => 'mix' }
+    }, -parent => 'Mix_Parent';
+    1
+};
+
+Test { members_valid Mix_Child_1->new(1, m2 => 2, m3 => 3), 3 };
+Test { members_valid Mix_Child_2->new(m4 => 4, 1, m2 => 2, m3 => 3), 4 };
+Test_Failure { Mix_Child_2->new(1, m2 => 2, m3 => 3, m4 => 4) };
 
 Report_Results;
