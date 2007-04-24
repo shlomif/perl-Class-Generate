@@ -69,3 +69,5 @@ Revision history for Perl extension Class::Generate.
 
 	The MIX parameter style wasn't working for classes with no positional
 	parameters.
+
+1.08	Class::Generate "uses" rather than "requires" Perl version 5.8.

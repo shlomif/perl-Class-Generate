@@ -1,6 +1,6 @@
 package Class::Generate;
 
-require 5.8.0;
+use 5.008;
 use strict;
 use Carp;
 use warnings::register;
@@ -13,7 +13,7 @@ BEGIN {
     require Exporter;
     @ISA = qw(Exporter);
     @EXPORT_OK = (qw(&class &subclass &delete_class), qw($save $accept_refs $strict $allow_redefine $class_var $instance_var $check_params $check_code $check_default $nfi $warnings));
-    $VERSION = '1.07';
+    $VERSION = '1.08';
 
     $accept_refs    = 1;
     $strict	    = 1;
