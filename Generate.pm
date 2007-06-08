@@ -13,7 +13,7 @@ BEGIN {
     require Exporter;
     @ISA = qw(Exporter);
     @EXPORT_OK = (qw(&class &subclass &delete_class), qw($save $accept_refs $strict $allow_redefine $class_var $instance_var $check_params $check_code $check_default $nfi $warnings));
-    $VERSION = '1.08';
+    $VERSION = '1.09';
 
     $accept_refs    = 1;
     $strict	    = 1;
@@ -687,24 +687,46 @@ sub form($) {
 	my $style = $constructor->style;
       STYLE: {
 	  $style->isa('Class::Generate::Key_Value') and do {
-	      $form .= comma_prefixed_list_of_values('kv_style', $style->keyed_param_names);
+	      my @kpn = $style->keyed_param_names;
+	      if ( @kpn ) {
+		  $form .= comma_prefixed_list_of_values('kv_style', $style->keyed_param_names);
+	      }
+	      else {
+		  $form .= ', kv_style => []';
+	      }
 	      last STYLE;
 	  };
 	  $style->isa('Class::Generate::Positional') and do {
 	      my @members =  sort { $style->order($a) <=> $style->order($b) } do { my %m = $style->order; keys %m };
-	      $form .= comma_prefixed_list_of_values('pos_style', @members);
+	      if ( @members ) {
+		  $form .= comma_prefixed_list_of_values('pos_style', @members);
+	      }
+	      else {
+		  $form .= ', pos_style => []';
+	      }
 	      last STYLE;
 	  };
 	  $style->isa('Class::Generate::Mix') and do {
 	      my @keyed_members = $style->keyed_param_names;
-	      my $km_form = list_of_values('keyed', @keyed_members);
 	      my @pos_members =  sort { $style->order($a) <=> $style->order($b) } do { my %m = $style->order; keys %m };
-	      my $pm_form = list_of_values('pos', @pos_members);
-	      $form .= ', mix_style => {' . join(', ', grep(length > 0, ($km_form, $pm_form))) . '}';
+	      if ( @keyed_members || @pos_members ) {
+		  my $km_form = list_of_values('keyed', @keyed_members);
+		  my $pm_form = list_of_values('pos', @pos_members);
+		  $form .= ', mix_style => {' . join(', ', grep(length > 0, ($km_form, $pm_form))) . '}';
+	      }
+	      else {
+		  $form .= ', mix_style => {}';
+	      }
 	      last STYLE;
 	  };
 	  $style->isa('Class::Generate::Own') and do {
-	      $form .= comma_prefixed_list_of_values('own_style', $style->super_values);
+	      my @super_values = $style->super_values;
+	      if ( @super_values ) {
+		  $form .= comma_prefixed_list_of_values('own_style', @super_values);
+	      }
+	      else {
+		  $form .= ', own_style => []';
+	      }
 	      last STYLE;
 	  };
       }
@@ -732,7 +754,7 @@ sub list_of_values($@) {
 }
 
 sub comma_prefixed_list_of_values($@) {
-    return $#_ > 0 ? ', ' . list_of_values(@_) : '';
+    return $#_ > 0 ? ', ' . list_of_values($_[0], @_[1..$#_]) : '';
 }
 
 package Class::Generate::Member_Names;	# This package encapsulates functions
@@ -1022,6 +1044,7 @@ sub create_code_checking_package($) {	# Each class with user-defined code gets
 	$packages .= join(';', $class->warnings_pragmas);
     }
     $packages .= join('', map('use ' . $_ . ';', $class->use_packages));
+    $packages .= 'use vars qw(@ISA);' if $class->parents;
     eval $package_decl . $packages;
 }
 					# Evaluate a code fragment, passing on

@@ -183,3 +183,16 @@ CHANGES IN VERSION 1.08
 Maintenance:
 
   --	The "require 5.8" statement has been changed to "use 5.008".
+
+CHANGES IN VERSION 1.09
+
+Bug fixes:
+
+  --	If a class method declares a subclass, then code-checking in the
+	subclass didn't set up a framework that declared @ISA.  This has been
+	fixed.
+
+  --	Constructor styles were not being properly recorded in classes that had
+	no members.  This caused saved classes to be incompletely specified
+	when reloaded, so subclass declarations sometimes failed.  This has
+	been fixed.

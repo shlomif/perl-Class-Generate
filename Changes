@@ -71,3 +71,9 @@ Revision history for Perl extension Class::Generate.
 	parameters.
 
 1.08	Class::Generate "uses" rather than "requires" Perl version 5.8.
+
+1.09	Class::Generate now ensures that, during code-checking in a subclass,
+	the code has access to the @ISA variable.
+
+	A bug in recording constructor styles has been fixed.  This bug only
+	matters for saved classes.
