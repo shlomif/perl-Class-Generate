@@ -77,4 +77,56 @@ Test { members_valid Mix_Child_1->new(1, m2 => 2, m3 => 3), 3 };
 Test { members_valid Mix_Child_2->new(m4 => 4, 1, m2 => 2, m3 => 3), 4 };
 Test_Failure { Mix_Child_2->new(1, m2 => 2, m3 => 3, m4 => 4) };
 
+Test {
+    class Own_Class => {
+	m1 => SPEC,
+	m2 => SPEC,
+	new => { style => 'own',
+		 post => q{$m1 = $_[0]; $m2 = $_[1];} }
+    };
+    1
+};
+
+Test { members_valid Own_Class->new(1, 2), 2 };
+
+Test {
+    class Own_Parent => {
+	m1 => SPEC
+    };
+    1
+};
+
+Test {
+    class Own_Child_1 => {
+	new => { style => 'own @_' }
+    }, -parent => 'Own_Parent';
+    members_valid Own_Child_1->new(m1 => 1), 1
+};
+
+Test_Failure {
+    class Own_Child_2 => {
+	new => { style => 'own' }	# Doesn't pass anything to parent.
+    }, -parent => 'Own_Parent';
+    Own_Child_2->new(m1 => 1)		# Therefore, parent croaks.
+};
+
+Test {
+    class Own_Child_3 => {
+	m2 => SPEC,
+	new => { style => q{own 'm1' $_[1]},
+		 post => q{$m2 = $_[0];} }
+    }, -parent => 'Own_Parent';
+    members_valid Own_Child_3->new(2, 1), 2
+};
+
+Test {
+    # Initialize superclass member to a constant.
+    # Use a constant with an embedded quote to make sure Class::Generate is
+    # quoting strings properly.
+    class Own_Child_4 => {
+	new => { style => q{own 'm1' "embeded'quote"} }
+    }, -parent => 'Own_Parent';
+    Own_Child_4->new->m1 eq "embeded'quote"
+};
+
 Report_Results;

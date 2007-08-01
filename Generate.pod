@@ -942,6 +942,14 @@ For example:
 			   { '$total' => 0 },
 			   '$average' ];
 
+C<Class::Generate> evaluates the initial value
+as part of evaluating your class.
+This means you must quote any strings:
+
+    class Room => [
+    ],
+	  -class_vars => [ { '$board' => "'white'" } ];
+
 =item -virtual=>boolean
 
 A virtual class is a class that cannot be instantiated,
@@ -1103,6 +1111,9 @@ Now you can create a C<Child> by passing the grade as the second parameter,
 and the name as the first:
 
     $c = Child->new('Penny Robinson', 5);
+
+The C<own> style causes the C<type>, C<required>, and C<default> member
+specifications to be ignored.
 
 =back
 

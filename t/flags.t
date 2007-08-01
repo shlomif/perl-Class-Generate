@@ -22,6 +22,8 @@ Test {
     class No_a => { @mems,
 		    '&func' => '@a = @_; return $#a;' }, -exclude => '\<a\>';
     class No_h_keys => { @mems }, -exclude => 'h_keys';
+    # The following has no effect, but it is a valid regexp.
+    class Regexp_Quote_Check => { @mems }, -exclude => '\'';
     1;
 };
 

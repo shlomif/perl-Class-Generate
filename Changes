@@ -77,3 +77,7 @@ Revision history for Perl extension Class::Generate.
 
 	A bug in recording constructor styles has been fixed.  This bug only
 	matters for saved classes.
+
+1.10	The code that generated the %_cginfo variable was not checking to see
+	if values contained single quotes.  This would cause errors.  The code
+	now places a backslash before single quotes.

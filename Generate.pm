@@ -13,7 +13,7 @@ BEGIN {
     require Exporter;
     @ISA = qw(Exporter);
     @EXPORT_OK = (qw(&class &subclass &delete_class), qw($save $accept_refs $strict $allow_redefine $class_var $instance_var $check_params $check_code $check_default $nfi $warnings));
-    $VERSION = '1.09';
+    $VERSION = '1.10';
 
     $accept_refs    = 1;
     $strict	    = 1;
@@ -682,7 +682,10 @@ sub form($) {
     $form .= comma_prefixed_list_of_values('protected', do { my %p = $class->protected; keys %p });
     $form .= comma_prefixed_list_of_values('private',   do { my %p = $class->private; keys %p });
 
-    $form .= q|, emr => '| . $class->excluded_methods_regexp . q|'|	if $class->excluded_methods_regexp;
+    if ( my $emr = $class->excluded_methods_regexp ) {
+	$emr =~ s/\'/\\\'/g;
+	$form .= ", emr => '$emr'";
+    }
     if ( (my $constructor = $class->constructor) ) {
 	my $style = $constructor->style;
       STYLE: {
@@ -722,6 +725,9 @@ sub form($) {
 	  $style->isa('Class::Generate::Own') and do {
 	      my @super_values = $style->super_values;
 	      if ( @super_values ) {
+	          for my $sv ( @super_values) {
+	              $sv =~ s/\'/\\\'/g;
+	          }
 		  $form .= comma_prefixed_list_of_values('own_style', @super_values);
 	      }
 	      else {
@@ -1141,6 +1147,7 @@ sub class_containing_method {		# contains the method that the form
 my %map = ('@' => 'ARRAY', '%' => 'HASH');
 sub verify_value($$) {			# Die if a given value (ref or string)
     my ($value, $type) = @_;		# is not the specified type.
+    # The following code is not wrong, but it could be smarter.
     if ( $type =~ /^\w/ ) {
 	$map{$type} = $type;
     }
@@ -2765,6 +2772,6 @@ sub self_from_super_form {
 
 1;
 
-# Copyright (c) 1999-2002 Steven Wartik. All rights reserved. This program is free
+# Copyright (c) 1999-2007 Steven Wartik. All rights reserved. This program is free
 # software; you can redistribute it and/or modify it under the same terms as
 # Perl itself.

@@ -196,3 +196,18 @@ Bug fixes:
 	no members.  This caused saved classes to be incompletely specified
 	when reloaded, so subclass declarations sometimes failed.  This has
 	been fixed.
+
+CHANGES IN VERSION 1.10
+
+Bug fixes:
+
+  --	A class that uses the "own" parameter style can pass a constant to
+	a superclass.  If this constant contains a single quote, that quote
+	will appear in %_cginfo.  Class::Generate was not escaping such quotes,
+	so the code would fail.  This has been fixed.
+
+Documentation:
+
+  --	Two additional explanations have been added.  One clarifies how
+	default member values work.  The other adds to the description of the
+	"own" parameter style.
