@@ -1,4 +1,4 @@
-This is the README file for Class::Generate, version 1.08.
+This is the README file for Class::Generate, version 1.11.
 
 Class::Generate is a Perl5 module to simplify creating class
 hierarchies.  It offers typed or untyped scalar, array, and hash
@@ -211,3 +211,13 @@ Documentation:
   --	Two additional explanations have been added.  One clarifies how
 	default member values work.  The other adds to the description of the
 	"own" parameter style.
+
+CHANGES IN VERSION 1.11
+
+Modernizations:
+
+  --	The deprecated "defined %hash" expression is no longer used.
+
+Documentation:
+
+  --	Corrected a sentence that used "array" where "hash" was meant.

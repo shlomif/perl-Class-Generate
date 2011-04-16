@@ -1,6 +1,6 @@
 package Class::Generate;
 
-use 5.008;
+use 5.010;
 use strict;
 use Carp;
 use warnings::register;
@@ -13,7 +13,7 @@ BEGIN {
     require Exporter;
     @ISA = qw(Exporter);
     @EXPORT_OK = (qw(&class &subclass &delete_class), qw($save $accept_refs $strict $allow_redefine $class_var $instance_var $check_params $check_code $check_default $nfi $warnings));
-    $VERSION = '1.10';
+    $VERSION = '1.11';
 
     $accept_refs    = 1;
     $strict	    = 1;
@@ -117,14 +117,14 @@ sub subclass(%) {				# One of the three interface
 
 sub delete_class(@) {					# One of the three interface routines
     for my $class ( @_ ) {				# to the package.  Deletes a class
-	next if ! eval 'defined %' . $class . '::';	# declared using Class::Generate.
-	if ( ! eval 'defined %' . $class . '::_cginfo' ) {
+	next if ! eval '%' . $class . '::';		# declared using Class::Generate.
+	if ( ! eval '%' . $class . '::_cginfo' ) {
 	    croak $class, ': Class was not declared using ', __PACKAGE__;
 	}
 	delete_package($class);
 	Class::Generate::Class_Holder::remove($class);
 	my $code_checking_package = __PACKAGE__ . '::Code_Checker::check::' . $class . '::';
-	if ( eval 'defined %' . $code_checking_package ) {
+	if ( eval '%' . $code_checking_package ) {
 	    delete_package($code_checking_package);
 	}
     }
@@ -397,7 +397,7 @@ $store_initial_value_reference = sub {		# Store initial values that are
 
 $class_defined = sub {			# Return TRUE if the argument
     my $class_name = $_[0];		# is the name of a Perl package.
-    return eval 'defined %'  . $class_name . '::';
+    return eval '%'  . $class_name . '::';
 };
 					# Do the main work of processing a class.
 $process_class = sub {			# Parse its specification, generate a
@@ -567,7 +567,7 @@ sub get($;$) {
     my ($class_name, $default_type) = @_;
     return $classes{$class_name} if exists $classes{$class_name};
 
-    return undef if ! eval 'defined %' . $class_name . '::';	# Package doesn't exist.
+    return undef if ! eval '%' . $class_name . '::';		# Package doesn't exist.
 
     my ($class, %info);
     if ( ! eval "exists \$" . $class_name . '::{_cginfo}' ) {	# Package exists but is

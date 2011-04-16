@@ -1777,7 +1777,7 @@ a string or an array reference, but was not.
 =item Expected string or hash reference
 
 (F) The value of an attribute's key/value pair should have been
-a string or an array reference, but was not.
+a string or a hash reference, but was not.
 
 =item Invalid parent specification (must be string or array reference)
 
