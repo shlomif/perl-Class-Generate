@@ -85,7 +85,7 @@ Test {
 	'&set_asub' => '$prot_amem[$_[0]] = $_[1];',
 	'&get_sub' => <<'EOS'
 {
-    my $hmem = '{' . join(',', map "$_=>$prot_hmem{$_}", keys %prot_hmem) . '}';
+    my $hmem = '{' . join(',', map "$_=>$prot_hmem{$_}", sort { $a cmp $b } keys %prot_hmem) . '}';
     my $amem = '[' . join(',', @prot_amem) . ']';
     return "amem = $amem; hmem = $hmem";
 }
