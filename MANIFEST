@@ -1,10 +1,10 @@
 Changes
-Generate.pod
 MANIFEST
 META.yml                                 Module meta-data (added by MakeMaker)
 Makefile.PL
 README
 lib/Class/Generate.pm
+lib/Class/Generate.pod
 t/A_Class.pm
 t/Test_Framework.pm
 t/class_options.t
