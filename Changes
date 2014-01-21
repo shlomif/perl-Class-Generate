@@ -1,83 +1,89 @@
 Revision history for Perl extension Class::Generate.
 
-1.00	Original version; submitted to CPAN on 22 Sept 1999.  No regression
-	tests included.
+1.00    Original version; submitted to CPAN on 22 Sept 1999.  No regression
+        tests included.
 
-1.01	Submitted to CPAN on 8 Nov 1999.
+1.01    Submitted to CPAN on 8 Nov 1999.
 
-	Bug fixes, primarily in passing parameters from a subclass'
-	constructor to its superclass' constructor.
+        Bug fixes, primarily in passing parameters from a subclass'
+        constructor to its superclass' constructor.
 
-	Added options class_var, instance_var, check_code, and check_default.
+        Added options class_var, instance_var, check_code, and check_default.
 
-	Added copy() and equals() methods.
+        Added copy() and equals() methods.
 
-1.02	Submitted to CPAN on 7 Dec 1999.
+1.02    Submitted to CPAN on 7 Dec 1999.
 
-	New options and features aimed at optimizing modules to perform
-	specific tasks without overhead of unused functions.
+        New options and features aimed at optimizing modules to perform
+        specific tasks without overhead of unused functions.
 
-1.03	Submitted to CPAN 0n 3 Jan 2000.
+1.03    Submitted to CPAN 0n 3 Jan 2000.
 
-	Added regression tests, and packaged according to accepted Perl style
-	with a Makefile.pl.
+        Added regression tests, and packaged according to accepted Perl style
+        with a Makefile.pl.
 
-	A Subclass may now access its parents' members in user-defined
-	code as identifiers, not through methods.
+        A Subclass may now access its parents' members in user-defined
+        code as identifiers, not through methods.
 
-1.04	Classes may now include protected members and methods, accessible in
-	subclasses but not in the parent.
+1.04    Classes may now include protected members and methods, accessible in
+        subclasses but not in the parent.
 
-	Hash-based members have a new accessor: $o->delete_x(k) deletes
-	key k from hash-based member x of instance o.
+        Hash-based members have a new accessor: $o->delete_x(k) deletes
+        key k from hash-based member x of instance o.
 
-	The nocopy option for members improves control over the semantics
-	of instance copying.
+        The nocopy option for members improves control over the semantics
+        of instance copying.
 
-	A variable _cginfo has been added to each package.  Currently it is
-	a scalar storing the class' base type.  Eventually it will contain
-	information that will improve handling of classes saved to files.
+        A variable _cginfo has been added to each package.  Currently it is
+        a scalar storing the class' base type.  Eventually it will contain
+        information that will improve handling of classes saved to files.
 
-	The regexps for testing the validity of a member name let some
-	erroneous names slip by.  They have been corrected.
+        The regexps for testing the validity of a member name let some
+        erroneous names slip by.  They have been corrected.
 
-	A test for whether a subroutine name is known in a package was
-	incorrectly implemented and sometimes resulted in a warning about an
-	undefined value.  It's been fixed.
+        A test for whether a subroutine name is known in a package was
+        incorrectly implemented and sometimes resulted in a warning about an
+        undefined value.  It's been fixed.
 
-	The MIX parameter passing style wasn't implementing the checks for
-	extraneous parameters correctly.
+        The MIX parameter passing style wasn't implementing the checks for
+        extraneous parameters correctly.
 
-1.05	The class function can now be used to declare subclasses, just like
-	C++.
+1.05    The class function can now be used to declare subclasses, just like
+        C++.
 
-	The mechanism for recording class declarations has been improved. It's
-	been modularized, with functions that make classes saved to files
-	understood when they're read back in.
+        The mechanism for recording class declarations has been improved. It's
+        been modularized, with functions that make classes saved to files
+        understood when they're read back in.
 
-1.06	Trailing semicolons are automatically appended to pre/post code if they
-	were missing ("Do what I mean").
+1.06    Trailing semicolons are automatically appended to pre/post code if they
+        were missing ("Do what I mean").
 
-	Diagnostics have been improved.
+        Diagnostics have been improved.
 
-	A subroutine delete_class() has been added, to encapsulate the
-	operation of deleting a class.
+        A subroutine delete_class() has been added, to encapsulate the
+        operation of deleting a class.
 
-1.07	Class::Generate now understands the warnings pragma in perl 5.8.
-	This has been effected by adding several options: warnings, check_code,
-	and check_params.
+1.07    Class::Generate now understands the warnings pragma in perl 5.8.
+        This has been effected by adding several options: warnings, check_code,
+        and check_params.
 
-	The MIX parameter style wasn't working for classes with no positional
-	parameters.
+        The MIX parameter style wasn't working for classes with no positional
+        parameters.
 
-1.08	Class::Generate "uses" rather than "requires" Perl version 5.8.
+1.08    Class::Generate "uses" rather than "requires" Perl version 5.8.
 
-1.09	Class::Generate now ensures that, during code-checking in a subclass,
-	the code has access to the @ISA variable.
+1.09    Class::Generate now ensures that, during code-checking in a subclass,
+        the code has access to the @ISA variable.
 
-	A bug in recording constructor styles has been fixed.  This bug only
-	matters for saved classes.
+        A bug in recording constructor styles has been fixed.  This bug only
+        matters for saved classes.
 
-1.10	The code that generated the %_cginfo variable was not checking to see
-	if values contained single quotes.  This would cause errors.  The code
-	now places a backslash before single quotes.
+1.10    The code that generated the %_cginfo variable was not checking to see
+        if values contained single quotes.  This would cause errors.  The code
+        now places a backslash before single quotes.
+
+1.12    2014-01-21
+        - Fix https://rt.cpan.org/Public/Bug/Display.html?id=81623 :
+            - Tests were broken in perl-5.18.x and above.
+        - Add information about the GitHub repository on
+        https://github.com/shlomif/perl-Class-Generate to the META.json.

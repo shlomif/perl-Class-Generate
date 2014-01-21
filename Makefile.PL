@@ -7,7 +7,7 @@ use ExtUtils::MakeMaker;
 # the contents of the Makefile that is written.
 WriteMakefile(
     NAME => 'Class::Generate',
-    VERSION => '1.11',
+    VERSION_FROM => 'lib/Class/Generate.pm',
     dist => {
         COMPRESS => 'gzip',
         SUFFIX   => 'gz'
