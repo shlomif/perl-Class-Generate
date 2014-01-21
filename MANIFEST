@@ -1,9 +1,10 @@
-MANIFEST
-README
 Changes
-Generate.pm
 Generate.pod
+MANIFEST
+META.yml                                 Module meta-data (added by MakeMaker)
 Makefile.PL
+README
+lib/Class/Generate.pm
 t/A_Class.pm
 t/Test_Framework.pm
 t/class_options.t
@@ -17,4 +18,3 @@ t/member_references.t
 t/param_styles.t
 t/protected_members.t
 t/protected_methods.t
-META.yml                                 Module meta-data (added by MakeMaker)
