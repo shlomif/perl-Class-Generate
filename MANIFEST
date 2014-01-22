@@ -18,3 +18,4 @@ t/member_references.t
 t/param_styles.t
 t/protected_members.t
 t/protected_methods.t
+t/rt27445.t
