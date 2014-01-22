@@ -13,7 +13,7 @@ BEGIN {
     require Exporter;
     @ISA = qw(Exporter);
     @EXPORT_OK = (qw(&class &subclass &delete_class), qw($save $accept_refs $strict $allow_redefine $class_var $instance_var $check_params $check_code $check_default $nfi $warnings));
-    $VERSION = '1.12';
+    $VERSION = '1.13';
 
     $accept_refs    = 1;
     $strict	    = 1;
