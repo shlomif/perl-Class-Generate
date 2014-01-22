@@ -10,6 +10,7 @@ t/Test_Framework.pm
 t/class_options.t
 t/constructor.t
 t/copy.t
+t/cpan-changes.t
 t/equals.t
 t/flags.t
 t/functions.t
