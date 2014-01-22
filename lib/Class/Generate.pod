@@ -863,6 +863,8 @@ The following code will generate a run-time error:
 
 =head1 THE DELETE_CLASS FUNCTION
 
+=head2 delete_class
+
 You can delete classes you declare using C<Class::Generate>,
 after which you can declare another class with the same name.
 Use the C<delete_class> function,
