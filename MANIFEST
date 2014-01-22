@@ -20,3 +20,4 @@ t/param_styles.t
 t/protected_members.t
 t/protected_methods.t
 t/rt27445.t
+t/style-trailing-space.t

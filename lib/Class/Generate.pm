@@ -481,7 +481,7 @@ $constructor_parameter_passing_style = sub {	# Establish the parameter-passing s
 	&$check_for_invalid_parameter_names(@values);
 	my @member_names = $class->public_member_names;
 	croak "$cm: Missing/extra members in style" unless $#values == $#member_names;
-	    
+
 	return Class::Generate::Positional->new(@values);
     };
     $style eq 'mix' and do {
@@ -608,12 +608,12 @@ sub get($;$) {
 	for my $name ( @{$info{class_methods}} ) {
 	    $class->user_defined_methods($name, Class::Generate::Class_Method->new($name));
 	}
-    }   
+    }
     if ( exists $info{instance_methods} ) {
 	for my $name ( @{$info{instance_methods}} ) {
 	    $class->user_defined_methods($name, Class::Generate::Method->new($name));
 	}
-    }   
+    }
     if ( exists $info{protected} ) {	# Set access ...
 	for my $protected_member ( @{$info{protected}} ) {
 	    $class->protected($protected_member, 1);
@@ -1464,7 +1464,7 @@ sub equals {
     my ($index, $existence_test) = @_;
     my ($sr, $or) = ('$self->' . $index, '$o->' . $index);
     my $form = "    return undef if $existence_test $sr ^ $existence_test $or;\n" .
-	       "    if ( $existence_test $sr ) { return undef unless $sr"; 
+	       "    if ( $existence_test $sr ) { return undef unless $sr";
     if ( $self->base ) {
 	$form .= "->equals($or)";
     }
@@ -1695,7 +1695,7 @@ sub values_form {
     my $self = shift;
     my ($class, $element, $member_name, $exists) = @_;
     return $class->sub_form($member_name, $member_name . '_values', "    return $exists ? values \%{$element} : ();\n");
-}    
+}
 
 sub as_var {
     my $self = shift;
@@ -1846,7 +1846,7 @@ sub form {
 	$form .= q|    croak '| . $self->name_form($class) . q|Virtual class' unless $class ne '| . $class->name . qq|';\n|;
     }
     $form .= $style->init_form($class, $self)		if ! $class->can_assign_all_params &&
-							   $style->can('init_form'); 
+							   $style->can('init_form');
     $form .= $self->param_tests_form($class, $style)	if $class->check_params;
     if ( defined $class->parents ) {
 	$form .=  $style->self_from_super_form($class);
@@ -2161,7 +2161,7 @@ sub form {				# Return a form representing
 sub class_var_form {			# Return a form for declaring a class
     my $var_spec = $_[0];		# variable.  Account for an initial value.
     return "my $var_spec;" if ! ref $var_spec;
-    return map { my $value = $$var_spec{$_}; 
+    return map { my $value = $$var_spec{$_};
 		 "my $_ = " . (ref $value ? substr($_, 0, 1) . "{$value}" : $value) . ';'
 		 } keys %$var_spec;
 }

@@ -56,7 +56,7 @@ Test { Requirement_Is_Expression_Based->new( members 1, 2 ) };
 Test {Requirement_Is_Expression_Based->new( members 1, 3 ) };
 eval_invalid_forms 'Requirement_Is_Expression_Based', [], [1], [1, 2, 3];
 
-Test { 
+Test {
     class Assertion_That_Succeeds => [
 	@members,
 	new => { assert => '$m1 ne 2 && &m2_size < 1 && scalar(&m3_keys) < 2' }

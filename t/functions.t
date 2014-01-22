@@ -13,7 +13,7 @@ use vars qw($o);
 
 Test {
     class Person => {
-	last_name  => { type => '$', required => 1 },	
+	last_name  => { type => '$', required => 1 },
 	first_name => '$',
 	mi	   => { type => '$', assert => '! defined $mi || length $mi == 1' },
 	'&name' => 'my $name = "";
