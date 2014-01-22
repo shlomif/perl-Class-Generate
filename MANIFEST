@@ -17,6 +17,7 @@ t/functions.t
 t/member_options.t
 t/member_references.t
 t/param_styles.t
+t/pod.t
 t/protected_members.t
 t/protected_methods.t
 t/rt27445.t
