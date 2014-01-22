@@ -45,7 +45,7 @@ Class::Generate - Generate Perl class hierarchies
  $obj->h($key, $value);			# Assign $value to hash member $key.
  %hash = $obj->h;			# Access whole hash.
  $hash_member_value = $obj->h($key);	# Access hash member value $key.
- $obj->delete_h($key);			# Delete slot occupied by $key. 
+ $obj->delete_h($key);			# Delete slot occupied by $key.
  @keys = $obj->h_keys;			# Access keys of member h.
  @values = $obj->h_values;		# Access values of member h.
 
@@ -400,7 +400,7 @@ to define C<Example>:
     $var_name = '@' . __PACKAGE__ . '::default_value';
     class Example => {
         e1 => { type => '@', default => "[$var_name]" },
-	e2 => { type => '@', default => \@default_value },	
+	e2 => { type => '@', default => \@default_value },
 	e3 => { type => '@', default => [ @default_value ] }
     };
     Example->new;	# e1, e2, and e3 are all identical.
@@ -451,7 +451,7 @@ You can reference individual elements, or the whole list:
 You can also invoke accessors.
 Prefix them with a C<&>:
 
-    class Bar => [ 
+    class Bar => [
 	m1 => { type => '@', post => '&undef_m1;' },
 	m2 => { type => '%', post => '@m1 = &m2_keys;' }
     ];
@@ -486,7 +486,7 @@ Use member names in the expression, as with C<post>.
 The expression will be tested any time
 the member is modified through its accessors.
 Your code will C<croak> if the expression evaluates to false.
-For instance, 
+For instance,
 
     class Person => [
 	name => '$',
@@ -740,7 +740,7 @@ You can add a method named C<&equals>
 to provide your own definition of equality.
 An example:
 
-    $epsilon = 0.1e-20; 
+    $epsilon = 0.1e-20;
     class Imaginary_No => {			# Treat floating-point
 	real => '$',				# values as equal if their
 	imag => '$',				# difference is less than
