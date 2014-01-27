@@ -15,7 +15,7 @@ name: Class-Generate
 provides:
   Class::Generate:
     file: lib/Class/Generate.pm
-    version: 1.13
+    version: 1.14
   Class::Generate::Array:
     file: lib/Class/Generate.pm
   Class::Generate::Array_Class:
@@ -70,4 +70,4 @@ requires:
 resources:
   license: http://dev.perl.org/licenses/
   repository: https://github.com/shlomif/perl-Class-Generate
-version: 1.13
+version: 1.14
