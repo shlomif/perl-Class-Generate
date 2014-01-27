@@ -1,6 +1,8 @@
 Revision history for Perl extension Class::Generate.
 
+1.14    2014-01-27
         - Convert from Makefile.PL to Build.PL for better Kwalitee.
+        - Add the LICENSE file - Kwalitee.
 
 1.13    2014-01-22
         - Add t/cpan-changes.t , t/pod-coverage.t , t/pod.t ,
