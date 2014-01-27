@@ -1,8 +1,9 @@
+Build.PL
 Changes
 MANIFEST
 META.yml                                 Module meta-data (added by MakeMaker)
-Makefile.PL
 README
+inc/Test/Run/Builder.pm
 lib/Class/Generate.pm
 lib/Class/Generate.pod
 t/A_Class.pm
@@ -23,3 +24,4 @@ t/protected_members.t
 t/protected_methods.t
 t/rt27445.t
 t/style-trailing-space.t
+META.json
