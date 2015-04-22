@@ -48,7 +48,8 @@ Test {
                   post => '$soundx = soundex $word if $word;' },
         soundx => "\$",
         text => { type => "\$", post => '$text = expand $text if $text;' },
-        new => { post => '$soundex_nocode = "Z000";
+        new => { post => 'use vars qw($soundex_nocode);
+                          $soundex_nocode = "Z000";
                           $soundx = soundex $word if $word;
                           $text = expand $text if $text;' }
     }, '-use' => 'Text::Soundex Text::Tabs';
@@ -57,7 +58,8 @@ Test {
                   post => '$soundx = soundex $word if $word;' },
         soundx => "\$",
         text => { type => "\$", post => '$text = expand $text if $text;' },
-        new => { post => '$soundex_nocode = "Z000";
+        new => { post => 'use vars qw($soundex_nocode);
+                          $soundex_nocode = "Z000";
                           $soundx = soundex $word if $word;
                           $text = expand $text if $text;' }
     }, '-use' => ['Text::Soundex', 'Text::Tabs'];

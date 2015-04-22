@@ -21,6 +21,11 @@ my $build = Test::Run::Builder->new(
         vars => 0,
         warnings => 0,
     },
+    test_requires =>
+    {
+        'Text::Soundex' => 0,
+        'Text::Tabs' => 0,
+    },
     'license' => 'perl',
     meta_merge =>
     {

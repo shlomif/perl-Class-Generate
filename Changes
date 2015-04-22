@@ -1,5 +1,10 @@
 Revision history for Perl extension Class::Generate.
 
+1.15    2015-04-22
+        - Fix tests on perl-5.20.1 (and wherever Text::Soundex is absent)
+            - https://rt.cpan.org/Ticket/Display.html?id=103875
+            - Thanks to Vaclav Barta (VBAR) for the report
+
 1.14    2014-01-27
         - Convert from Makefile.PL to Build.PL for better Kwalitee.
         - Add the LICENSE file - Kwalitee.

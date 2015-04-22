@@ -2,20 +2,22 @@
 abstract: 'Generate Perl class hierarchies'
 author:
   - unknown
-build_requires: {}
+build_requires:
+  Text::Soundex: '0'
+  Text::Tabs: '0'
 configure_requires:
-  Module::Build: 0.36
+  Module::Build: '0.36'
 dynamic_config: 1
-generated_by: 'Module::Build version 0.4007, CPAN::Meta::Converter version 2.132830'
+generated_by: 'Module::Build version 0.421, CPAN::Meta::Converter version 2.142060'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
-  version: 1.4
+  version: '1.4'
 name: Class-Generate
 provides:
   Class::Generate:
     file: lib/Class/Generate.pm
-    version: 1.14
+    version: '1.14'
   Class::Generate::Array:
     file: lib/Class/Generate.pm
   Class::Generate::Array_Class:
@@ -61,13 +63,13 @@ provides:
   Class::Generate::Support:
     file: lib/Class/Generate.pm
 requires:
-  Carp: 0
-  Symbol: 0
-  perl: 5.010
-  strict: 0
-  vars: 0
-  warnings: 0
+  Carp: '0'
+  Symbol: '0'
+  perl: '5.010'
+  strict: '0'
+  vars: '0'
+  warnings: '0'
 resources:
   license: http://dev.perl.org/licenses/
   repository: https://github.com/shlomif/perl-Class-Generate
-version: 1.14
+version: '1.14'
